@@ -7,7 +7,10 @@ from aiogram.types import (
     FSInputFile
 )
 
-from aiogram.filters import CommandStart, Command
+from aiogram.filters import (
+    CommandStart,
+    Command
+)
 
 from config import (
     LOG_GROUP_ID,
@@ -15,9 +18,7 @@ from config import (
     DEFAULT_TTL,
     SPAM_DELAY,
     LINK_COOLDOWN,
-    SITE_LINK,
-    OPERATOR_1,
-    OPERATOR_2
+    SITE_LINK
 )
 
 from menu import main_menu
@@ -36,58 +37,68 @@ router = Router()
 
 
 WELCOME_TEXT = f"""
-✨ Добро пожаловать в Lady Shop.
+<b>Lady Shop</b> ✨
+
+Добро пожаловать.
 
 Выберите нужный раздел ниже.
 
-🔒 Все ссылки выдаются временно
+🔒 Все ссылки временные
 для безопасности пользователей.
 
 🤖 Сохраняйте резервного бота:
 
 {RESERVE_BOT}
-
-⚠️ В случае блокировки основного бота используйте резерв.
 """
 
 
 LINK_TEXT = """
-🔗 Ваша временная ссылка готова
+<b>🔗 Ваша ссылка готова</b>
 
-⏳ Ссылка действительна 15 минут
+⏳ Ссылка действует 15 минут
 
-⚠️ Не передавайте ссылку третьим лицам
+⚠️ Не передавайте ссылку другим людям
 """
 
 
 SITE_TEXT = f"""
-🌐 Сохраните наш сайт-визитку в закладки.
+🌐 Сохраните сайт-визитку.
 
-Там всегда находятся актуальные ссылки и информация.
+Там всегда находятся актуальные ссылки.
 
 👇 Сайт:
 {SITE_LINK}
 """
 
 
-OPERATORS_TEXT = f"""
-🤍 Операторы никогда не пишут первыми в ЛС
+def get_operators_text():
 
-⚠️ Остерегайтесь фейков и швыров.
+    operator1 = get_setting("operator1")
+    operator2 = get_setting("operator2")
 
-Проверяйте username внимательно.
+    if not operator1:
+        operator1 = "@none"
 
-👇 Оператор сис:
-{OPERATOR_1}
+    if not operator2:
+        operator2 = "@none"
 
-👇 Оператор бро:
-{OPERATOR_2}
+    return f"""
+🤍 Операторы никогда не пишут первыми
+
+⚠️ Остерегайтесь фейков и швыров
+
+👇 Оператор сис
+{operator1}
+
+👇 Оператор бро
+{operator2}
 """
 
 
 async def send_log(bot, text):
 
     try:
+
         await bot.send_message(
             LOG_GROUP_ID,
             text
@@ -169,7 +180,7 @@ async def start_handler(message: Message, bot):
 
     await send_log(
         bot,
-        f"🆕 Новый пользователь:\n\nID: {user_id}"
+        f"🆕 Новый пользователь\n\nID: {user_id}"
     )
 
 
@@ -201,8 +212,8 @@ async def link_handler(message: Message, bot):
 
         minutes = cooldown // 60
 
-        await message.reply(
-            f"⏳ Новую ссылку можно получить через {minutes} мин."
+        await message.answer(
+            f"⏳ Новая ссылка будет доступна через {minutes} мин."
         )
 
         return
@@ -211,7 +222,7 @@ async def link_handler(message: Message, bot):
 
     if not chat_id:
 
-        await message.reply(
+        await message.answer(
             "❌ Ссылка не настроена."
         )
 
@@ -238,25 +249,25 @@ async def link_handler(message: Message, bot):
 
         photo = FSInputFile("chat.jpg")
 
-        await message.reply_photo(
+        await message.answer_photo(
             photo=photo,
             caption=f"{LINK_TEXT}\n\n👇 Вход:\n{link}"
         )
 
         await send_log(
             bot,
-            f"🔗 Пользователь получил ссылку:\n\nID: {user_id}"
+            f"🔗 Получена ссылка\n\nID: {user_id}"
         )
 
     except Exception as e:
 
-        await message.reply(
+        await message.answer(
             "❌ Ошибка создания ссылки."
         )
 
         await send_log(
             bot,
-            f"❌ Ошибка invite:\n{e}"
+            f"❌ Invite error\n\n{e}"
         )
 
 
@@ -264,7 +275,8 @@ async def link_handler(message: Message, bot):
 async def site_callback(callback: CallbackQuery):
 
     await callback.message.answer(
-        SITE_TEXT
+        SITE_TEXT,
+        disable_web_page_preview=True
     )
 
     await callback.answer()
@@ -275,7 +287,8 @@ async def site_callback(callback: CallbackQuery):
 async def operator_callback(callback: CallbackQuery):
 
     await callback.message.answer(
-        OPERATORS_TEXT
+        get_operators_text(),
+        disable_web_page_preview=True
     )
 
     await callback.answer()
@@ -309,7 +322,7 @@ async def link_callbacks(callback: CallbackQuery, bot):
         minutes = cooldown // 60
 
         await callback.answer(
-            f"Новая ссылка будет доступна через {minutes} мин.",
+            f"Новая ссылка через {minutes} мин.",
             show_alert=True
         )
 
@@ -356,7 +369,7 @@ async def link_callbacks(callback: CallbackQuery, bot):
 
         await send_log(
             bot,
-            f"🔗 Пользователь получил ссылку:\n\nID: {user_id}"
+            f"🔗 Получена ссылка\n\nID: {user_id}"
         )
 
     except Exception as e:
@@ -368,5 +381,5 @@ async def link_callbacks(callback: CallbackQuery, bot):
 
         await send_log(
             bot,
-            f"❌ Invite error:\n{e}"
+            f"❌ Invite error\n\n{e}"
         )
