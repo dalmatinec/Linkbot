@@ -21,7 +21,10 @@ from config import (
     SITE_LINK
 )
 
-from menu import main_menu
+from menu import (
+    main_menu,
+    back_to_menu_keyboard
+)
 
 from db import (
     add_user,
@@ -37,9 +40,7 @@ router = Router()
 
 
 WELCOME_TEXT = f"""
-<b>Lady Shop</b> ✨
-
-Добро пожаловать.
+<b>Добро пожаловать в Lady Shop</b> ✨
 
 Выберите нужный раздел ниже.
 
@@ -68,30 +69,6 @@ SITE_TEXT = f"""
 
 👇 Сайт:
 {SITE_LINK}
-"""
-
-
-def get_operators_text():
-
-    operator1 = get_setting("operator1")
-    operator2 = get_setting("operator2")
-
-    if not operator1:
-        operator1 = "@none"
-
-    if not operator2:
-        operator2 = "@none"
-
-    return f"""
-🤍 Операторы никогда не пишут первыми
-
-⚠️ Остерегайтесь фейков и швыров
-
-👇 Оператор сис
-{operator1}
-
-👇 Оператор бро
-{operator2}
 """
 
 
@@ -182,6 +159,32 @@ async def start_handler(message: Message, bot):
         bot,
         f"🆕 Новый пользователь\n\nID: {user_id}"
     )
+
+
+@router.message(Command("menu"))
+async def menu_command(message: Message):
+
+    photo = FSInputFile("welcome.jpg")
+
+    await message.answer_photo(
+        photo=photo,
+        caption=WELCOME_TEXT,
+        reply_markup=main_menu()
+    )
+
+
+@router.callback_query(F.data == "main_menu")
+async def main_menu_callback(callback: CallbackQuery):
+
+    photo = FSInputFile("welcome.jpg")
+
+    await callback.message.answer_photo(
+        photo=photo,
+        caption=WELCOME_TEXT,
+        reply_markup=main_menu()
+    )
+
+    await callback.answer()
 
 
 @router.message(Command("link"))
@@ -276,19 +279,62 @@ async def site_callback(callback: CallbackQuery):
 
     await callback.message.answer(
         SITE_TEXT,
-        disable_web_page_preview=True
+        disable_web_page_preview=True,
+        reply_markup=back_to_menu_keyboard()
     )
 
     await callback.answer()
 
 
 @router.callback_query(F.data == "operator1")
-@router.callback_query(F.data == "operator2")
-async def operator_callback(callback: CallbackQuery):
+async def operator1_callback(callback: CallbackQuery):
+
+    operator1 = get_setting("operator1")
+
+    if not operator1:
+        operator1 = "@none"
+
+    text = f"""
+🤍 Операторы никогда не пишут первыми
+
+⚠️ Остерегайтесь фейков и швыров
+
+👇 Оператор сис
+
+{operator1}
+"""
 
     await callback.message.answer(
-        get_operators_text(),
-        disable_web_page_preview=True
+        text,
+        disable_web_page_preview=True,
+        reply_markup=back_to_menu_keyboard()
+    )
+
+    await callback.answer()
+
+
+@router.callback_query(F.data == "operator2")
+async def operator2_callback(callback: CallbackQuery):
+
+    operator2 = get_setting("operator2")
+
+    if not operator2:
+        operator2 = "@none"
+
+    text = f"""
+🤍 Операторы никогда не пишут первыми
+
+⚠️ Остерегайтесь фейков и швыров
+
+👇 Оператор бро
+
+{operator2}
+"""
+
+    await callback.message.answer(
+        text,
+        disable_web_page_preview=True,
+        reply_markup=back_to_menu_keyboard()
     )
 
     await callback.answer()
@@ -362,7 +408,8 @@ async def link_callbacks(callback: CallbackQuery, bot):
 
         await callback.message.answer_photo(
             photo=photo,
-            caption=f"{LINK_TEXT}\n\n👇 Вход:\n{link}"
+            caption=f"{LINK_TEXT}\n\n👇 Вход:\n{link}",
+            reply_markup=back_to_menu_keyboard()
         )
 
         await callback.answer()
