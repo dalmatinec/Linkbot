@@ -1,7 +1,10 @@
 import asyncio
 
 from aiogram import Router, F
-from aiogram.types import Message, CallbackQuery
+from aiogram.types import (
+    Message,
+    CallbackQuery
+)
 
 from aiogram.filters import Command
 
@@ -50,21 +53,20 @@ async def help_command(message: Message):
         return
 
     text = """
-📌 Команды администратора
+<b>📌 Команды администратора</b>
 
-/help
 /stats
-
 /send
+
+/setlink
+/setttl
+/setoperator
 
 /add
 /del
 
 /ban
 /unban
-
-/setttl
-/setlink
 """
 
     await message.answer(text)
@@ -82,11 +84,11 @@ async def stats_command(message: Message):
     users, banned, links = get_stats()
 
     text = f"""
-📊 Статистика
+<b>📊 Статистика</b>
 
 👤 Пользователей: {users}
 
-🚫 Забанено: {banned}
+🚫 Заблокировано: {banned}
 
 🔗 Выдано ссылок: {links}
 """
@@ -121,7 +123,47 @@ async def setttl_command(message: Message):
     )
 
     await message.answer(
-        f"✅ Новый TTL: {ttl} сек."
+        f"✅ TTL обновлён: {ttl}"
+    )
+
+
+@router.message(Command("setoperator"))
+async def setoperator_command(message: Message):
+
+    if message.chat.type != "private":
+        return
+
+    if not has_access(message.from_user.id):
+        return
+
+    args = message.text.split()
+
+    if len(args) != 3:
+
+        await message.answer(
+            "Пример:\n/setoperator 1 @username"
+        )
+
+        return
+
+    num = args[1]
+    username = args[2]
+
+    if num not in ["1", "2"]:
+
+        await message.answer(
+            "Доступно только 1 или 2"
+        )
+
+        return
+
+    set_setting(
+        f"operator{num}",
+        username
+    )
+
+    await message.answer(
+        "✅ Оператор обновлён."
     )
 
 
@@ -167,7 +209,7 @@ async def setlink_command(message: Message):
     )
 
     await message.answer(
-        f"✅ Ссылка {key} обновлена."
+        f"✅ {key} обновлён."
     )
 
 
@@ -311,7 +353,7 @@ async def ban_command(message: Message):
         ban_user(user_id)
 
         await message.answer(
-            "✅ Пользователь забанен."
+            "✅ Пользователь заблокирован."
         )
 
     except:
@@ -339,7 +381,7 @@ async def unban_command(message: Message):
         unban_user(user_id)
 
         await message.answer(
-            "✅ Пользователь разбанен."
+            "✅ Пользователь разблокирован."
         )
 
     except:
@@ -446,7 +488,7 @@ async def start_broadcast(callback: CallbackQuery, bot):
             pass
 
     await callback.message.answer(
-        f"✅ Рассылка завершена.\n\n"
+        f"✅ Рассылка завершена\n\n"
         f"Отправлено: {success}"
     )
 
