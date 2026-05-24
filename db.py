@@ -1,165 +1,171 @@
 import sqlite3
-from datetime import datetime
+import time
 
-db = sqlite3.connect("users.db")
-cursor = db.cursor()
+conn = sqlite3.connect(
+    "users.db"
+)
+
+cursor = conn.cursor()
 
 
 def init_db():
+
     cursor.execute("""
     CREATE TABLE IF NOT EXISTS users (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        user_id INTEGER UNIQUE,
+
+        user_id INTEGER PRIMARY KEY,
         username TEXT,
         first_name TEXT,
-        joined_at TEXT,
+
+        is_banned INTEGER DEFAULT 0,
+
         last_link_time INTEGER DEFAULT 0,
         last_message_time INTEGER DEFAULT 0,
-        banned INTEGER DEFAULT 0
+
+        last_chat_time INTEGER DEFAULT 0,
+        last_channel_time INTEGER DEFAULT 0,
+        last_reserve_time INTEGER DEFAULT 0
     )
     """)
 
     cursor.execute("""
     CREATE TABLE IF NOT EXISTS admins (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        user_id INTEGER UNIQUE,
+
+        user_id INTEGER PRIMARY KEY,
         username TEXT
     )
     """)
 
     cursor.execute("""
     CREATE TABLE IF NOT EXISTS settings (
-        key TEXT UNIQUE,
+
+        name TEXT PRIMARY KEY,
         value TEXT
     )
     """)
 
     cursor.execute("""
     CREATE TABLE IF NOT EXISTS stats (
+
         total_links INTEGER DEFAULT 0
     )
     """)
 
     cursor.execute("""
-    INSERT OR IGNORE INTO stats (rowid, total_links)
-    VALUES (1, 0)
+    SELECT * FROM stats
     """)
 
-    db.commit()
+    if not cursor.fetchone():
+
+        cursor.execute("""
+        INSERT INTO stats (
+            total_links
+        )
+        VALUES (0)
+        """)
+
+    conn.commit()
 
 
 def add_user(user_id, username, first_name):
-    cursor.execute(
-        "SELECT * FROM users WHERE user_id=?",
-        (user_id,)
+
+    cursor.execute("""
+    INSERT OR IGNORE INTO users (
+        user_id,
+        username,
+        first_name
     )
+    VALUES (?, ?, ?)
+    """, (
+        user_id,
+        username,
+        first_name
+    ))
 
-    user = cursor.fetchone()
-
-    if not user:
-        cursor.execute("""
-        INSERT INTO users
-        (user_id, username, first_name, joined_at)
-        VALUES (?, ?, ?, ?)
-        """, (
-            user_id,
-            username,
-            first_name,
-            datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-        ))
-
-        db.commit()
+    conn.commit()
 
 
 def get_user(user_id):
-    cursor.execute(
-        "SELECT * FROM users WHERE user_id=?",
-        (user_id,)
-    )
+
+    cursor.execute("""
+    SELECT * FROM users
+    WHERE user_id=?
+    """, (user_id,))
 
     return cursor.fetchone()
 
 
-def update_link_time(user_id, timestamp):
-    cursor.execute("""
-    UPDATE users
-    SET last_link_time=?
-    WHERE user_id=?
-    """, (
-        timestamp,
-        user_id
-    ))
-
-    db.commit()
-
-
-def update_message_time(user_id, timestamp):
-    cursor.execute("""
-    UPDATE users
-    SET last_message_time=?
-    WHERE user_id=?
-    """, (
-        timestamp,
-        user_id
-    ))
-
-    db.commit()
-
-
-def is_banned(user_id):
-    cursor.execute("""
-    SELECT banned FROM users
-    WHERE user_id=?
-    """, (user_id,))
-
-    result = cursor.fetchone()
-
-    if result:
-        return result[0] == 1
-
-    return False
-
-
 def ban_user(user_id):
+
     cursor.execute("""
     UPDATE users
-    SET banned=1
+    SET is_banned=1
     WHERE user_id=?
     """, (user_id,))
 
-    db.commit()
+    conn.commit()
 
 
 def unban_user(user_id):
+
     cursor.execute("""
     UPDATE users
-    SET banned=0
+    SET is_banned=0
     WHERE user_id=?
     """, (user_id,))
 
-    db.commit()
+    conn.commit()
+
+
+def is_banned(user_id):
+
+    cursor.execute("""
+    SELECT is_banned FROM users
+    WHERE user_id=?
+    """, (user_id,))
+
+    user = cursor.fetchone()
+
+    if not user:
+        return False
+
+    return bool(user[0])
 
 
 def add_admin(user_id, username):
+
     cursor.execute("""
-    INSERT OR IGNORE INTO admins
-    (user_id, username)
+    INSERT OR IGNORE INTO admins (
+        user_id,
+        username
+    )
     VALUES (?, ?)
     """, (
         user_id,
         username
     ))
 
-    db.commit()
+    conn.commit()
 
 
-def remove_admin(user_id):
+def remove_admin_by_username(username):
+
+    cursor.execute("""
+    DELETE FROM admins
+    WHERE username=?
+    """, (username,))
+
+    conn.commit()
+
+
+def remove_admin_by_id(user_id):
+
     cursor.execute("""
     DELETE FROM admins
     WHERE user_id=?
     """, (user_id,))
 
-    db.commit()
+    conn.commit()
 
 
 def is_admin(user_id):
@@ -172,35 +178,83 @@ def is_admin(user_id):
     return cursor.fetchone() is not None
 
 
-def get_user_by_username(username):
-    username = username.replace("@", "")
+def update_link_time(user_id, timestamp):
 
     cursor.execute("""
-    SELECT * FROM users
-    WHERE username=?
-    """, (username,))
-
-    return cursor.fetchone()
-
-
-def set_setting(key, value):
-    cursor.execute("""
-    INSERT OR REPLACE INTO settings
-    (key, value)
-    VALUES (?, ?)
+    UPDATE users
+    SET last_link_time=?
+    WHERE user_id=?
     """, (
-        key,
-        str(value)
+        timestamp,
+        user_id
     ))
 
-    db.commit()
+    conn.commit()
 
 
-def get_setting(key):
+def update_message_time(user_id, timestamp):
+
+    cursor.execute("""
+    UPDATE users
+    SET last_message_time=?
+    WHERE user_id=?
+    """, (
+        timestamp,
+        user_id
+    ))
+
+    conn.commit()
+
+
+def update_category_time(user_id, category):
+
+    field = f"last_{category}_time"
+
+    cursor.execute(f"""
+    UPDATE users
+    SET {field}=?
+    WHERE user_id=?
+    """, (
+        int(time.time()),
+        user_id
+    ))
+
+    conn.commit()
+
+
+def get_category_time(user, category):
+
+    fields = {
+        "chat": 7,
+        "channel": 8,
+        "reserve": 9
+    }
+
+    return user[fields[category]]
+
+
+def set_setting(name, value):
+
+    cursor.execute("""
+    INSERT OR REPLACE INTO settings (
+        name,
+        value
+    )
+    VALUES (?, ?)
+    """, (
+        name,
+        value
+    ))
+
+    conn.commit()
+
+
+def get_setting(name):
+
     cursor.execute("""
     SELECT value FROM settings
-    WHERE key=?
-    """, (key,))
+    WHERE name=?
+    """, (name,))
 
     result = cursor.fetchone()
 
@@ -210,42 +264,36 @@ def get_setting(key):
     return None
 
 
-def get_all_users():
-    cursor.execute("""
-    SELECT user_id FROM users
-    WHERE banned=0
-    """)
-
-    return cursor.fetchall()
-
-
 def increment_links():
+
     cursor.execute("""
     UPDATE stats
     SET total_links = total_links + 1
-    WHERE rowid=1
     """)
 
-    db.commit()
+    conn.commit()
 
 
 def get_stats():
+
     cursor.execute("""
-    SELECT COUNT(*) FROM users
+    SELECT COUNT(*)
+    FROM users
     """)
 
     users = cursor.fetchone()[0]
 
     cursor.execute("""
-    SELECT COUNT(*) FROM users
-    WHERE banned=1
+    SELECT COUNT(*)
+    FROM users
+    WHERE is_banned=1
     """)
 
     banned = cursor.fetchone()[0]
 
     cursor.execute("""
-    SELECT total_links FROM stats
-    WHERE rowid=1
+    SELECT total_links
+    FROM stats
     """)
 
     links = cursor.fetchone()[0]
