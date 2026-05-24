@@ -330,3 +330,12 @@ def get_user_by_username(username):
     """, (username,))
 
     return cursor.fetchone()
+
+def get_all_users():
+
+    cursor.execute("""
+    SELECT user_id
+    FROM users
+    """)
+
+    return cursor.fetchall()
