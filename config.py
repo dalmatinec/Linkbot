@@ -4,7 +4,7 @@ OWNER_ID = 8923481943
 
 LOG_GROUP_ID = -1003926287922
 
-RESERVE_BOT = "@reserve_bot"
+RESERVE_BOT = "@lady_linkbot"
 
 DEFAULT_TTL = 900
 
@@ -16,7 +16,3 @@ BROADCAST_DELAY = 0.5
 
 
 SITE_LINK = "https://ladyshop.info"
-
-OPERATOR_1 = "https://t.me/ladyshop_org"
-
-OPERATOR_2 = "https://t.me/Lady_oper"
