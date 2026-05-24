@@ -40,7 +40,9 @@ router = Router()
 
 
 WELCOME_TEXT = f"""
-<b>Добро пожаловать в Lady Shop</b> ✨
+<b>Lady Shop</b> ✨
+
+Добро пожаловать.
 
 Выберите нужный раздел ниже.
 
@@ -254,7 +256,8 @@ async def link_handler(message: Message, bot):
 
         await message.answer_photo(
             photo=photo,
-            caption=f"{LINK_TEXT}\n\n👇 Вход:\n{link}"
+            caption=f"{LINK_TEXT}\n\n👇 Вход:\n{link}",
+            reply_markup=back_to_menu_keyboard()
         )
 
         await send_log(
