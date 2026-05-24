@@ -319,3 +319,14 @@ def remove_admin(value):
         """, (username,))
 
     conn.commit()
+
+def get_user_by_username(username):
+
+    username = username.replace("@", "")
+
+    cursor.execute("""
+    SELECT * FROM users
+    WHERE username=?
+    """, (username,))
+
+    return cursor.fetchone()
