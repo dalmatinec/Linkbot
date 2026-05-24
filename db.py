@@ -299,3 +299,23 @@ def get_stats():
     links = cursor.fetchone()[0]
 
     return users, banned, links
+
+def remove_admin(value):
+
+    if str(value).isdigit():
+
+        cursor.execute("""
+        DELETE FROM admins
+        WHERE user_id=?
+        """, (int(value),))
+
+    else:
+
+        username = str(value).replace("@", "")
+
+        cursor.execute("""
+        DELETE FROM admins
+        WHERE username=?
+        """, (username,))
+
+    conn.commit()
