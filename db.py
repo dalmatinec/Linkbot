@@ -13,14 +13,18 @@ def init_db():
     cursor.execute("""
     CREATE TABLE IF NOT EXISTS users (
 
-        user_id INTEGER PRIMARY KEY,
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+
+        user_id INTEGER,
         username TEXT,
         first_name TEXT,
 
-        is_banned INTEGER DEFAULT 0,
+        joined_at TEXT,
 
         last_link_time INTEGER DEFAULT 0,
         last_message_time INTEGER DEFAULT 0,
+
+        banned INTEGER DEFAULT 0,
 
         last_chat_time INTEGER DEFAULT 0,
         last_channel_time INTEGER DEFAULT 0,
@@ -95,11 +99,33 @@ def get_user(user_id):
     return cursor.fetchone()
 
 
+def get_user_by_username(username):
+
+    username = username.replace("@", "")
+
+    cursor.execute("""
+    SELECT * FROM users
+    WHERE username=?
+    """, (username,))
+
+    return cursor.fetchone()
+
+
+def get_all_users():
+
+    cursor.execute("""
+    SELECT user_id
+    FROM users
+    """)
+
+    return cursor.fetchall()
+
+
 def ban_user(user_id):
 
     cursor.execute("""
     UPDATE users
-    SET is_banned=1
+    SET banned=1
     WHERE user_id=?
     """, (user_id,))
 
@@ -110,7 +136,7 @@ def unban_user(user_id):
 
     cursor.execute("""
     UPDATE users
-    SET is_banned=0
+    SET banned=0
     WHERE user_id=?
     """, (user_id,))
 
@@ -120,7 +146,7 @@ def unban_user(user_id):
 def is_banned(user_id):
 
     cursor.execute("""
-    SELECT is_banned FROM users
+    SELECT banned FROM users
     WHERE user_id=?
     """, (user_id,))
 
@@ -144,6 +170,27 @@ def add_admin(user_id, username):
         user_id,
         username
     ))
+
+    conn.commit()
+
+
+def remove_admin(value):
+
+    if str(value).isdigit():
+
+        cursor.execute("""
+        DELETE FROM admins
+        WHERE user_id=?
+        """, (int(value),))
+
+    else:
+
+        username = str(value).replace("@", "")
+
+        cursor.execute("""
+        DELETE FROM admins
+        WHERE username=?
+        """, (username,))
 
     conn.commit()
 
@@ -225,9 +272,9 @@ def update_category_time(user_id, category):
 def get_category_time(user, category):
 
     fields = {
-        "chat": 7,
-        "channel": 8,
-        "reserve": 9
+        "chat": 8,
+        "channel": 9,
+        "reserve": 10
     }
 
     return user[fields[category]]
@@ -286,7 +333,7 @@ def get_stats():
     cursor.execute("""
     SELECT COUNT(*)
     FROM users
-    WHERE is_banned=1
+    WHERE banned=1
     """)
 
     banned = cursor.fetchone()[0]
@@ -299,43 +346,3 @@ def get_stats():
     links = cursor.fetchone()[0]
 
     return users, banned, links
-
-def remove_admin(value):
-
-    if str(value).isdigit():
-
-        cursor.execute("""
-        DELETE FROM admins
-        WHERE user_id=?
-        """, (int(value),))
-
-    else:
-
-        username = str(value).replace("@", "")
-
-        cursor.execute("""
-        DELETE FROM admins
-        WHERE username=?
-        """, (username,))
-
-    conn.commit()
-
-def get_user_by_username(username):
-
-    username = username.replace("@", "")
-
-    cursor.execute("""
-    SELECT * FROM users
-    WHERE username=?
-    """, (username,))
-
-    return cursor.fetchone()
-
-def get_all_users():
-
-    cursor.execute("""
-    SELECT user_id
-    FROM users
-    """)
-
-    return cursor.fetchall()
