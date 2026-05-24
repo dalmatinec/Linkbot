@@ -1,8 +1,9 @@
 import asyncio
 
 from aiogram import Bot, Dispatcher
+from aiogram.client.default import DefaultBotProperties
 
-from config import BOT_TOKEN
+from config import BOT_TOKEN, OWNER_ID
 
 from db import (
     init_db,
@@ -11,8 +12,6 @@ from db import (
 
 from handlers import router as handlers_router
 from admin import router as admin_router
-
-from config import OWNER_ID
 
 
 async def main():
@@ -26,7 +25,9 @@ async def main():
 
     bot = Bot(
         token=BOT_TOKEN,
-        parse_mode="HTML"
+        default=DefaultBotProperties(
+            parse_mode="HTML"
+        )
     )
 
     dp = Dispatcher()
