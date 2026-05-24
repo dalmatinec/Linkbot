@@ -31,6 +31,8 @@ from db import (
     get_user,
     update_link_time,
     update_message_time,
+    update_category_time,
+    get_category_time,
     increment_links,
     is_banned,
     get_setting
@@ -111,7 +113,7 @@ def is_spam(user):
 
     now = int(time.time())
 
-    last_message_time = user[6]
+    last_message_time = user[5]
 
     if now - last_message_time < SPAM_DELAY:
         return True
@@ -119,14 +121,17 @@ def is_spam(user):
     return False
 
 
-def check_cooldown(user):
+def check_cooldown(user, category):
 
     now = int(time.time())
 
-    last_link_time = user[5]
+    last_time = get_category_time(
+        user,
+        category
+    )
 
     remaining = LINK_COOLDOWN - (
-        now - last_link_time
+        now - last_time
     )
 
     if remaining > 0:
@@ -163,22 +168,12 @@ async def start_handler(message: Message, bot):
     )
 
 
-@router.message(Command("menu"))
-async def menu_command(message: Message):
-
-    photo = FSInputFile("welcome.jpg")
-
-    await message.answer_photo(
-        photo=photo,
-        caption=WELCOME_TEXT,
-        reply_markup=main_menu()
-    )
-
-
 @router.callback_query(F.data == "main_menu")
 async def main_menu_callback(callback: CallbackQuery):
 
     photo = FSInputFile("welcome.jpg")
+
+    await callback.message.delete()
 
     await callback.message.answer_photo(
         photo=photo,
@@ -189,100 +184,11 @@ async def main_menu_callback(callback: CallbackQuery):
     await callback.answer()
 
 
-@router.message(Command("link"))
-async def link_handler(message: Message, bot):
-
-    if message.chat.type == "private":
-        return
-
-    user_id = message.from_user.id
-
-    if is_banned(user_id):
-        return
-
-    add_user(
-        user_id,
-        message.from_user.username,
-        message.from_user.first_name
-    )
-
-    user = get_user(user_id)
-
-    if is_spam(user):
-        return
-
-    cooldown = check_cooldown(user)
-
-    if cooldown > 0:
-
-        minutes = cooldown // 60
-
-        await message.answer(
-            f"⏳ Новая ссылка будет доступна через {minutes} мин."
-        )
-
-        return
-
-    chat_id = get_chat_id("chat")
-
-    if not chat_id:
-
-        await message.answer(
-            "❌ Ссылка не настроена."
-        )
-
-        return
-
-    try:
-
-        link = await create_invite(
-            bot,
-            chat_id
-        )
-
-        update_link_time(
-            user_id,
-            int(time.time())
-        )
-
-        update_message_time(
-            user_id,
-            int(time.time())
-        )
-
-        increment_links()
-
-        photo = FSInputFile("chat.jpg")
-
-        await message.answer_photo(
-            photo=photo,
-            caption=f"{LINK_TEXT}\n\n👇 Вход:\n{link}",
-            reply_markup=back_to_menu_keyboard()
-        )
-
-        await send_log(
-            bot,
-            f"🔗 Получена ссылка\n\nID: {user_id}"
-        )
-
-    except Exception as e:
-
-        await message.answer(
-            "❌ Ошибка создания ссылки."
-        )
-
-        await send_log(
-            bot,
-            f"❌ Invite error\n\n{e}"
-        )
-
-
 @router.callback_query(F.data == "site")
 async def site_callback(callback: CallbackQuery):
 
-    await callback.message.answer(
-        SITE_TEXT,
-        disable_web_page_preview=True,
+    await callback.message.edit_caption(
+        caption=SITE_TEXT,
         reply_markup=back_to_menu_keyboard()
     )
 
@@ -307,9 +213,8 @@ async def operator1_callback(callback: CallbackQuery):
 {operator1}
 """
 
-    await callback.message.answer(
-        text,
-        disable_web_page_preview=True,
+    await callback.message.edit_caption(
+        caption=text,
         reply_markup=back_to_menu_keyboard()
     )
 
@@ -334,9 +239,8 @@ async def operator2_callback(callback: CallbackQuery):
 {operator2}
 """
 
-    await callback.message.answer(
-        text,
-        disable_web_page_preview=True,
+    await callback.message.edit_caption(
+        caption=text,
         reply_markup=back_to_menu_keyboard()
     )
 
@@ -364,7 +268,10 @@ async def link_callbacks(callback: CallbackQuery, bot):
 
         return
 
-    cooldown = check_cooldown(user)
+    cooldown = check_cooldown(
+        user,
+        callback.data
+    )
 
     if cooldown > 0:
 
@@ -405,7 +312,14 @@ async def link_callbacks(callback: CallbackQuery, bot):
             int(time.time())
         )
 
+        update_category_time(
+            user_id,
+            callback.data
+        )
+
         increment_links()
+
+        await callback.message.delete()
 
         photo = FSInputFile("chat.jpg")
 
@@ -417,11 +331,6 @@ async def link_callbacks(callback: CallbackQuery, bot):
 
         await callback.answer()
 
-        await send_log(
-            bot,
-            f"🔗 Получена ссылка\n\nID: {user_id}"
-        )
-
     except Exception as e:
 
         await callback.answer(
@@ -429,7 +338,4 @@ async def link_callbacks(callback: CallbackQuery, bot):
             show_alert=True
         )
 
-        await send_log(
-            bot,
-            f"❌ Invite error\n\n{e}"
-        )
+        print(e)
