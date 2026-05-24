@@ -163,12 +163,13 @@ def remove_admin(user_id):
 
 
 def is_admin(user_id):
+
     cursor.execute("""
     SELECT * FROM admins
     WHERE user_id=?
     """, (user_id,))
 
-    return cursor.fetchone()
+    return cursor.fetchone() is not None
 
 
 def get_user_by_username(username):
