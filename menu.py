@@ -1,5 +1,7 @@
-from aiogram.utils.keyboard import InlineKeyboardBuilder
-from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
+from aiogram.types import (
+    InlineKeyboardMarkup,
+    InlineKeyboardButton
+)
 
 
 def main_menu():
@@ -40,6 +42,22 @@ def main_menu():
             InlineKeyboardButton(
                 text="Оператор бро 💚",
                 callback_data="operator2"
+            )
+        ]
+    ]
+
+    return InlineKeyboardMarkup(
+        inline_keyboard=keyboard
+    )
+
+
+def back_to_menu_keyboard():
+
+    keyboard = [
+        [
+            InlineKeyboardButton(
+                text="⬅️ Главное меню",
+                callback_data="main_menu"
             )
         ]
     ]
