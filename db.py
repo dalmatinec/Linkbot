@@ -2,6 +2,7 @@ import sqlite3
 from datetime import datetime
 from typing import Optional, List, Dict, Any, Union
 from config import DB_PATH
+from typing import Optional, List, Dict, Any, Union
 
 DB_PATH = "bot.db"
 
