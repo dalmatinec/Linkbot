@@ -2,7 +2,10 @@ import sqlite3
 from datetime import datetime
 from typing import Optional, List, Dict, Any, Union
 from config import DB_PATH
-from typing import Optional, List, Dict, Any, Union
+# Кулдауны по умолчанию (можно будет менять через админку позже)
+CHAT_COOLDOWN = 3600
+CHANNEL_COOLDOWN = 3600
+RESERVE_COOLDOWN = 86400
 
 DB_PATH = "bot.db"
 
@@ -381,4 +384,3 @@ def get_user_stats() -> Dict:
     }
 
 # ============ КОЛДЖАУНЫ ============
-from config import CHAT_COOLDOWN, CHANNEL_COOLDOWN, RESERVE_COOLDOWN
