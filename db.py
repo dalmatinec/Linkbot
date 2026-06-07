@@ -306,3 +306,11 @@ def get_recent_logs(limit: int = 30) -> List[Dict]:
     rows = cur.fetchall()
     conn.close()
     return [dict(row) for row in rows]
+
+def get_all_users_for_export() -> List[Dict]:
+    conn = get_db()
+    cur = conn.cursor()
+    cur.execute('SELECT * FROM users ORDER BY joined_at DESC')
+    rows = cur.fetchall()
+    conn.close()
+    return [dict(row) for row in rows]
