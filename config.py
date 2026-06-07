@@ -1,4 +1,4 @@
-BOT_TOKEN = "НОВЫЙ_ТОКЕН"
+BOT_TOKEN = "8480271932:AAEzbh3s1XvXnQlIp-MD_qYIrCZ6Lmmlucg"
 
 OWNER_ID = 8658409677
 
