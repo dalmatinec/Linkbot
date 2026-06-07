@@ -457,3 +457,222 @@ def add_broadcast(admin_id, success, failed):
     ))
 
     conn.commit()
+
+# =========================
+# STATS
+# =========================
+
+def get_stats():
+
+    now = int(time.time())
+
+    day_ago = now - 86400
+    week_ago = now - 604800
+    month_ago = now - 2592000
+
+    cursor.execute("""
+    SELECT COUNT(*)
+    FROM users
+    """)
+    total_users = cursor.fetchone()[0]
+
+    cursor.execute("""
+    SELECT COUNT(*)
+    FROM users
+    WHERE joined_at >= ?
+    """, (day_ago,))
+    today_users = cursor.fetchone()[0]
+
+    cursor.execute("""
+    SELECT COUNT(*)
+    FROM users
+    WHERE joined_at >= ?
+    """, (week_ago,))
+    week_users = cursor.fetchone()[0]
+
+    cursor.execute("""
+    SELECT COUNT(*)
+    FROM users
+    WHERE joined_at >= ?
+    """, (month_ago,))
+    month_users = cursor.fetchone()[0]
+
+    cursor.execute("""
+    SELECT COUNT(*)
+    FROM users
+    WHERE banned = 1
+    """)
+    banned_users = cursor.fetchone()[0]
+
+    cursor.execute("""
+    SELECT COUNT(*)
+    FROM users
+    WHERE last_activity >= ?
+    """, (day_ago,))
+    active_today = cursor.fetchone()[0]
+
+    return {
+        "total_users": total_users,
+        "today_users": today_users,
+        "week_users": week_users,
+        "month_users": month_users,
+        "active_today": active_today,
+        "banned_users": banned_users
+    }
+
+
+def get_link_stats():
+
+    cursor.execute("""
+    SELECT COUNT(*)
+    FROM link_logs
+    WHERE category='chat'
+    """)
+    chat = cursor.fetchone()[0]
+
+    cursor.execute("""
+    SELECT COUNT(*)
+    FROM link_logs
+    WHERE category='channel'
+    """)
+    channel = cursor.fetchone()[0]
+
+    cursor.execute("""
+    SELECT COUNT(*)
+    FROM link_logs
+    WHERE category='reserve'
+    """)
+    reserve = cursor.fetchone()[0]
+
+    return {
+        "chat": chat,
+        "channel": channel,
+        "reserve": reserve
+    }
+
+
+def get_daily_stats(days=7):
+
+    result = []
+
+    now = int(time.time())
+
+    for i in range(days):
+
+        start = now - ((i + 1) * 86400)
+        end = now - (i * 86400)
+
+        cursor.execute("""
+        SELECT COUNT(*)
+        FROM users
+        WHERE joined_at BETWEEN ? AND ?
+        """, (start, end))
+
+        users = cursor.fetchone()[0]
+
+        cursor.execute("""
+        SELECT COUNT(*)
+        FROM link_logs
+        WHERE created_at BETWEEN ? AND ?
+        """, (start, end))
+
+        links = cursor.fetchone()[0]
+
+        result.append({
+            "users": users,
+            "links": links
+        })
+
+    return result
+
+
+# =========================
+# ADMINS
+# =========================
+
+def get_admins():
+
+    cursor.execute("""
+    SELECT user_id, username, role, created_at
+    FROM admins
+    ORDER BY created_at DESC
+    """)
+
+    return cursor.fetchall()
+
+
+# =========================
+# LOGS
+# =========================
+
+def get_admin_logs(limit=50):
+
+    cursor.execute("""
+    SELECT admin_id,
+           action,
+           target,
+           created_at
+    FROM admin_logs
+    ORDER BY id DESC
+    LIMIT ?
+    """, (limit,))
+
+    return cursor.fetchall()
+
+
+def get_link_logs(limit=50):
+
+    cursor.execute("""
+    SELECT user_id,
+           category,
+           created_at
+    FROM link_logs
+    ORDER BY id DESC
+    LIMIT ?
+    """, (limit,))
+
+    return cursor.fetchall()
+
+
+# =========================
+# BROADCASTS
+# =========================
+
+def get_broadcasts(limit=20):
+
+    cursor.execute("""
+    SELECT admin_id,
+           success_count,
+           failed_count,
+           created_at
+    FROM broadcasts
+    ORDER BY id DESC
+    LIMIT ?
+    """, (limit,))
+
+    return cursor.fetchall()
+
+
+# =========================
+# EXPORT
+# =========================
+
+def get_export_data():
+
+    cursor.execute("""
+    SELECT
+        user_id,
+        username,
+        first_name,
+        joined_at,
+        last_activity,
+        banned,
+        links_total,
+        chat_links,
+        channel_links,
+        reserve_links
+    FROM users
+    ORDER BY id DESC
+    """)
+
+    return cursor.fetchall()
