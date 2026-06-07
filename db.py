@@ -1,674 +1,383 @@
 import sqlite3
-import time
+from datetime import datetime
+from typing import Optional, List, Dict, Any, Union
+from config import DB_PATH
 
-conn = sqlite3.connect(
-    "users.db",
-    check_same_thread=False
-)
+DB_PATH = "bot.db"
 
-cursor = conn.cursor()
-
+def get_db():
+    """Получить соединение с БД"""
+    conn = sqlite3.connect(DB_PATH)
+    conn.row_factory = sqlite3.Row
+    return conn
 
 def init_db():
-
-    cursor.execute("""
-    CREATE TABLE IF NOT EXISTS users (
-
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-
-        user_id INTEGER UNIQUE,
-        username TEXT,
-        first_name TEXT,
-
-        joined_at INTEGER,
-        last_activity INTEGER,
-
-        banned INTEGER DEFAULT 0,
-
-        links_total INTEGER DEFAULT 0,
-
-        chat_links INTEGER DEFAULT 0,
-        channel_links INTEGER DEFAULT 0,
-        reserve_links INTEGER DEFAULT 0,
-
-        last_chat_time INTEGER DEFAULT 0,
-        last_channel_time INTEGER DEFAULT 0,
-        last_reserve_time INTEGER DEFAULT 0
-    )
-    """)
-
-    cursor.execute("""
-    CREATE TABLE IF NOT EXISTS admins (
-
-        user_id INTEGER PRIMARY KEY,
-
-        username TEXT,
-        role TEXT,
-
-        created_at INTEGER
-    )
-    """)
-
-    cursor.execute("""
-    CREATE TABLE IF NOT EXISTS settings (
-
-        name TEXT PRIMARY KEY,
-        value TEXT
-    )
-    """)
-
-    cursor.execute("""
-    CREATE TABLE IF NOT EXISTS link_logs (
-
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-
-        user_id INTEGER,
-        category TEXT,
-
-        created_at INTEGER
-    )
-    """)
-
-    cursor.execute("""
-    CREATE TABLE IF NOT EXISTS admin_logs (
-
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-
-        admin_id INTEGER,
-        action TEXT,
-        target TEXT,
-
-        created_at INTEGER
-    )
-    """)
-
-    cursor.execute("""
-    CREATE TABLE IF NOT EXISTS broadcasts (
-
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-
-        admin_id INTEGER,
-
-        success_count INTEGER,
-        failed_count INTEGER,
-
-        created_at INTEGER
-    )
-    """)
-
-    cursor.execute("""
-    CREATE INDEX IF NOT EXISTS idx_users_user_id
-    ON users(user_id)
-    """)
-
-    cursor.execute("""
-    CREATE INDEX IF NOT EXISTS idx_users_username
-    ON users(username)
-    """)
-
-    cursor.execute("""
-    CREATE INDEX IF NOT EXISTS idx_link_logs_user
-    ON link_logs(user_id)
-    """)
-
-    conn.commit()
-
-
-# =========================
-# USERS
-# =========================
-
-def add_user(user_id, username, first_name):
-
-    now = int(time.time())
-
-    cursor.execute("""
-    INSERT OR IGNORE INTO users (
-
-        user_id,
-        username,
-        first_name,
-
-        joined_at,
-        last_activity
-
-    )
-    VALUES (?, ?, ?, ?, ?)
-    """, (
-        user_id,
-        username,
-        first_name,
-        now,
-        now
-    ))
-
-    cursor.execute("""
-    UPDATE users
-    SET
-        username=?,
-        first_name=?,
-        last_activity=?
-    WHERE user_id=?
-    """, (
-        username,
-        first_name,
-        now,
-        user_id
-    ))
-
-    conn.commit()
-
-
-def get_user(user_id):
-
-    cursor.execute("""
-    SELECT *
-    FROM users
-    WHERE user_id=?
-    """, (user_id,))
-
-    return cursor.fetchone()
-
-
-def get_user_by_username(username):
-
-    username = username.replace("@", "").lower()
-
-    cursor.execute("""
-    SELECT *
-    FROM users
-    WHERE LOWER(username)=?
-    """, (username,))
-
-    return cursor.fetchone()
-
-
-def get_all_users():
-
-    cursor.execute("""
-    SELECT user_id
-    FROM users
-    WHERE banned=0
-    """)
-
-    return cursor.fetchall()
-
-
-def update_activity(user_id):
-
-    cursor.execute("""
-    UPDATE users
-    SET last_activity=?
-    WHERE user_id=?
-    """, (
-        int(time.time()),
-        user_id
-    ))
-
-    conn.commit()
-
-
-# =========================
-# BAN
-# =========================
-
-def ban_user(user_id):
-
-    cursor.execute("""
-    UPDATE users
-    SET banned=1
-    WHERE user_id=?
-    """, (user_id,))
-
-    conn.commit()
-
-
-def unban_user(user_id):
-
-    cursor.execute("""
-    UPDATE users
-    SET banned=0
-    WHERE user_id=?
-    """, (user_id,))
-
-    conn.commit()
-
-
-def is_banned(user_id):
-
-    cursor.execute("""
-    SELECT banned
-    FROM users
-    WHERE user_id=?
-    """, (user_id,))
-
-    result = cursor.fetchone()
-
-    if not result:
-        return False
-
-    return bool(result[0])
-
-
-# =========================
-# ADMINS
-# =========================
-
-def add_admin(user_id, username, role="admin"):
-
-    cursor.execute("""
-    INSERT OR REPLACE INTO admins (
-
-        user_id,
-        username,
-        role,
-        created_at
-
-    )
-    VALUES (?, ?, ?, ?)
-    """, (
-        user_id,
-        username,
-        role,
-        int(time.time())
-    ))
-
-    conn.commit()
-
-
-def remove_admin(user_id):
-
-    cursor.execute("""
-    DELETE FROM admins
-    WHERE user_id=?
-    """, (user_id,))
-
-    conn.commit()
-
-
-def is_admin(user_id):
-
-    cursor.execute("""
-    SELECT *
-    FROM admins
-    WHERE user_id=?
-    """, (user_id,))
-
-    return cursor.fetchone() is not None
-
-
-def get_admins():
-
-    cursor.execute("""
-    SELECT
-        user_id,
-        username,
-        role,
-        created_at
-    FROM admins
-    ORDER BY created_at DESC
-    """)
-
-    return cursor.fetchall()
-
-
-# =========================
-# SETTINGS
-# =========================
-
-def set_setting(name, value):
-
-    cursor.execute("""
-    INSERT OR REPLACE INTO settings (
-        name,
-        value
-    )
-    VALUES (?, ?)
-    """, (
-        name,
-        str(value)
-    ))
-
-    conn.commit()
-
-
-def get_setting(name):
-
-    cursor.execute("""
-    SELECT value
-    FROM settings
-    WHERE name=?
-    """, (name,))
-
-    result = cursor.fetchone()
-
-    if result:
-        return result[0]
-
-    return None
-
-
-# =========================
-# LINKS
-# =========================
-
-def add_link_log(user_id, category):
-
-    now = int(time.time())
-
-    cursor.execute("""
-    INSERT INTO link_logs (
-        user_id,
-        category,
-        created_at
-    )
-    VALUES (?, ?, ?)
-    """, (
-        user_id,
-        category,
-        now
-    ))
-
-    field = f"{category}_links"
-
-    cursor.execute(f"""
-    UPDATE users
-    SET
-        links_total = links_total + 1,
-        {field} = {field} + 1
-    WHERE user_id=?
-    """, (user_id,))
-
-    conn.commit()
-
-
-# =========================
-# COOLDOWN
-# =========================
-
-def update_category_time(user_id, category):
-
-    fields = {
-        "chat": "last_chat_time",
-        "channel": "last_channel_time",
-        "reserve": "last_reserve_time"
+    """Инициализация всех таблиц"""
+    conn = get_db()
+    cur = conn.cursor()
+    
+    # Таблица users
+    cur.execute('''
+        CREATE TABLE IF NOT EXISTS users (
+            user_id INTEGER PRIMARY KEY,
+            username TEXT,
+            first_name TEXT,
+            joined_at TIMESTAMP,
+            last_activity TIMESTAMP,
+            banned INTEGER DEFAULT 0,
+            links_total INTEGER DEFAULT 0,
+            chat_links INTEGER DEFAULT 0,
+            channel_links INTEGER DEFAULT 0,
+            reserve_links INTEGER DEFAULT 0,
+            last_chat_time TIMESTAMP,
+            last_channel_time TIMESTAMP,
+            last_reserve_time TIMESTAMP
+        )
+    ''')
+    
+    # Таблица admins
+    cur.execute('''
+        CREATE TABLE IF NOT EXISTS admins (
+            user_id INTEGER PRIMARY KEY,
+            username TEXT,
+            role TEXT,
+            created_at TIMESTAMP
+        )
+    ''')
+    
+    # Таблица settings
+    cur.execute('''
+        CREATE TABLE IF NOT EXISTS settings (
+            name TEXT PRIMARY KEY,
+            value TEXT
+        )
+    ''')
+    
+    # Таблица link_logs
+    cur.execute('''
+        CREATE TABLE IF NOT EXISTS link_logs (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id INTEGER,
+            category TEXT,
+            created_at TIMESTAMP
+        )
+    ''')
+    
+    # Таблица admin_logs
+    cur.execute('''
+        CREATE TABLE IF NOT EXISTS admin_logs (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            admin_id INTEGER,
+            action TEXT,
+            target TEXT,
+            created_at TIMESTAMP
+        )
+    ''')
+    
+    # Таблица broadcasts
+    cur.execute('''
+        CREATE TABLE IF NOT EXISTS broadcasts (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            admin_id INTEGER,
+            success_count INTEGER,
+            failed_count INTEGER,
+            created_at TIMESTAMP
+        )
+    ''')
+    
+    # Заполняем настройки по умолчанию (всё пустое, кроме обязательных)
+    default_settings = {
+        'chat_link': '',
+        'channel_link': '',
+        'operator1_name': 'Оператор SIS',
+        'operator1_link': '',
+        'operator2_name': 'Оператор BRO',
+        'operator2_link': '',
+        'reserve_link': '',
+        'site_link': '',
+        'info_text': 'ℹ️ Информация о боте\n\nЗдесь можно получить ссылки на ресурсы.'
     }
-
-    field = fields.get(category)
-
-    if not field:
-        return
-
-    cursor.execute(f"""
-    UPDATE users
-    SET {field}=?
-    WHERE user_id=?
-    """, (
-        int(time.time()),
-        user_id
-    ))
-
+    
+    for name, value in default_settings.items():
+        cur.execute('INSERT OR IGNORE INTO settings (name, value) VALUES (?, ?)', (name, value))
+    
+    # Добавляем владельца в админы, если его там нет
+    from config import OWNER_ID
+    cur.execute('''
+        INSERT OR IGNORE INTO admins (user_id, username, role, created_at)
+        VALUES (?, ?, ?, ?)
+    ''', (OWNER_ID, 'owner', 'owner', datetime.now()))
+    
     conn.commit()
+    conn.close()
 
+# ============ РАБОТА С ПОЛЬЗОВАТЕЛЯМИ ============
 
-def get_category_time(user, category):
-
-    indexes = {
-        "chat": 10,
-        "channel": 11,
-        "reserve": 12
-    }
-
-    return user[indexes[category]]
-
-
-# =========================
-# LOGS
-# =========================
-
-def add_admin_log(admin_id, action, target=""):
-
-    cursor.execute("""
-    INSERT INTO admin_logs (
-
-        admin_id,
-        action,
-        target,
-        created_at
-
-    )
-    VALUES (?, ?, ?, ?)
-    """, (
-        admin_id,
-        action,
-        target,
-        int(time.time())
-    ))
-
+def register_user(user_id: int, username: str, first_name: str):
+    """Регистрация нового пользователя"""
+    conn = get_db()
+    cur = conn.cursor()
+    cur.execute('''
+        INSERT OR IGNORE INTO users (user_id, username, first_name, joined_at, last_activity)
+        VALUES (?, ?, ?, ?, ?)
+    ''', (user_id, username, first_name, datetime.now(), datetime.now()))
+    # Если пользователь уже есть, обновляем username и first_name
+    cur.execute('''
+        UPDATE users SET username = ?, first_name = ? WHERE user_id = ?
+    ''', (username, first_name, user_id))
     conn.commit()
+    conn.close()
 
-
-def get_admin_logs(limit=50):
-
-    cursor.execute("""
-    SELECT
-        admin_id,
-        action,
-        target,
-        created_at
-    FROM admin_logs
-    ORDER BY id DESC
-    LIMIT ?
-    """, (limit,))
-
-    return cursor.fetchall()
-
-
-def get_link_logs(limit=50):
-
-    cursor.execute("""
-    SELECT
-        user_id,
-        category,
-        created_at
-    FROM link_logs
-    ORDER BY id DESC
-    LIMIT ?
-    """, (limit,))
-
-    return cursor.fetchall()
-
-
-# =========================
-# BROADCASTS
-# =========================
-
-def add_broadcast(admin_id, success, failed):
-
-    cursor.execute("""
-    INSERT INTO broadcasts (
-
-        admin_id,
-        success_count,
-        failed_count,
-        created_at
-
-    )
-    VALUES (?, ?, ?, ?)
-    """, (
-        admin_id,
-        success,
-        failed,
-        int(time.time())
-    ))
-
+def update_activity(user_id: int):
+    """Обновление последней активности"""
+    conn = get_db()
+    cur = conn.cursor()
+    cur.execute('UPDATE users SET last_activity = ? WHERE user_id = ?', (datetime.now(), user_id))
     conn.commit()
+    conn.close()
 
+def get_user(user_id: int) -> Optional[Dict]:
+    """Получить данные пользователя"""
+    conn = get_db()
+    cur = conn.cursor()
+    cur.execute('SELECT * FROM users WHERE user_id = ?', (user_id,))
+    row = cur.fetchone()
+    conn.close()
+    return dict(row) if row else None
 
-def get_broadcasts(limit=20):
+def is_banned(user_id: int) -> bool:
+    """Проверить забанен ли пользователь"""
+    conn = get_db()
+    cur = conn.cursor()
+    cur.execute('SELECT banned FROM users WHERE user_id = ?', (user_id,))
+    row = cur.fetchone()
+    conn.close()
+    return row['banned'] == 1 if row else False
 
-    cursor.execute("""
-    SELECT
-        admin_id,
-        success_count,
-        failed_count,
-        created_at
-    FROM broadcasts
-    ORDER BY id DESC
-    LIMIT ?
-    """, (limit,))
+def ban_user(user_id: int, admin_id: int):
+    """Забанить пользователя"""
+    conn = get_db()
+    cur = conn.cursor()
+    cur.execute('UPDATE users SET banned = 1 WHERE user_id = ?', (user_id,))
+    conn.commit()
+    conn.close()
+    add_admin_log(admin_id, 'ban', str(user_id))
 
-    return cursor.fetchall()
+def unban_user(user_id: int, admin_id: int):
+    """Разбанить пользователя"""
+    conn = get_db()
+    cur = conn.cursor()
+    cur.execute('UPDATE users SET banned = 0 WHERE user_id = ?', (user_id,))
+    conn.commit()
+    conn.close()
+    add_admin_log(admin_id, 'unban', str(user_id))
 
+def update_link_usage(user_id: int, category: str):
+    """Обновить статистику использования ссылок"""
+    conn = get_db()
+    cur = conn.cursor()
+    now = datetime.now()
+    
+    # Обновляем счётчики
+    cur.execute('UPDATE users SET links_total = links_total + 1 WHERE user_id = ?', (user_id,))
+    
+    if category == 'chat':
+        cur.execute('UPDATE users SET chat_links = chat_links + 1, last_chat_time = ? WHERE user_id = ?', (now, user_id))
+    elif category == 'channel':
+        cur.execute('UPDATE users SET channel_links = channel_links + 1, last_channel_time = ? WHERE user_id = ?', (now, user_id))
+    elif category == 'reserve':
+        cur.execute('UPDATE users SET reserve_links = reserve_links + 1, last_reserve_time = ? WHERE user_id = ?', (now, user_id))
+    
+    # Добавляем лог перехода
+    cur.execute('INSERT INTO link_logs (user_id, category, created_at) VALUES (?, ?, ?)', (user_id, category, now))
+    
+    conn.commit()
+    conn.close()
 
-# =========================
-# STATS
-# =========================
+def can_get_link(user_id: int, category: str) -> tuple[bool, int]:
+    """Проверить, может ли пользователь получить ссылку. Возвращает (можно, секунды_ожидания)"""
+    user = get_user(user_id)
+    if not user:
+        return True, 0
+    
+    now = datetime.now()
+    
+    if category == 'chat':
+        last_time = user.get('last_chat_time')
+        if last_time:
+            last_time = datetime.fromisoformat(last_time) if isinstance(last_time, str) else last_time
+            elapsed = (now - last_time).total_seconds()
+            if elapsed < CHAT_COOLDOWN:
+                return False, int(CHAT_COOLDOWN - elapsed)
+    elif category == 'channel':
+        last_time = user.get('last_channel_time')
+        if last_time:
+            last_time = datetime.fromisoformat(last_time) if isinstance(last_time, str) else last_time
+            elapsed = (now - last_time).total_seconds()
+            if elapsed < CHANNEL_COOLDOWN:
+                return False, int(CHANNEL_COOLDOWN - elapsed)
+    elif category == 'reserve':
+        last_time = user.get('last_reserve_time')
+        if last_time:
+            last_time = datetime.fromisoformat(last_time) if isinstance(last_time, str) else last_time
+            elapsed = (now - last_time).total_seconds()
+            if elapsed < RESERVE_COOLDOWN:
+                return False, int(RESERVE_COOLDOWN - elapsed)
+    
+    return True, 0
 
-def get_stats():
+# ============ РАБОТА С АДМИНАМИ ============
 
-    now = int(time.time())
+def is_admin(user_id: int) -> bool:
+    """Проверить, является ли пользователь админом"""
+    conn = get_db()
+    cur = conn.cursor()
+    cur.execute('SELECT 1 FROM admins WHERE user_id = ?', (user_id,))
+    row = cur.fetchone()
+    conn.close()
+    return row is not None
 
-    day_ago = now - 86400
-    week_ago = now - 604800
-    month_ago = now - 2592000
+def add_admin(user_id: int, username: str, role: str = 'admin', admin_id: int = None):
+    """Добавить админа"""
+    conn = get_db()
+    cur = conn.cursor()
+    cur.execute('''
+        INSERT OR REPLACE INTO admins (user_id, username, role, created_at)
+        VALUES (?, ?, ?, ?)
+    ''', (user_id, username, role, datetime.now()))
+    conn.commit()
+    conn.close()
+    if admin_id:
+        add_admin_log(admin_id, 'add_admin', str(user_id))
 
-    cursor.execute("""
-    SELECT COUNT(*)
-    FROM users
-    """)
-    total_users = cursor.fetchone()[0]
+def remove_admin(user_id: int, admin_id: int = None):
+    """Удалить админа"""
+    conn = get_db()
+    cur = conn.cursor()
+    cur.execute('DELETE FROM admins WHERE user_id = ?', (user_id,))
+    conn.commit()
+    conn.close()
+    if admin_id:
+        add_admin_log(admin_id, 'remove_admin', str(user_id))
 
-    cursor.execute("""
-    SELECT COUNT(*)
-    FROM users
-    WHERE joined_at >= ?
-    """, (day_ago,))
-    today_users = cursor.fetchone()[0]
+def get_all_admins() -> List[Dict]:
+    """Получить всех админов"""
+    conn = get_db()
+    cur = conn.cursor()
+    cur.execute('SELECT * FROM admins ORDER BY created_at')
+    rows = cur.fetchall()
+    conn.close()
+    return [dict(row) for row in rows]
 
-    cursor.execute("""
-    SELECT COUNT(*)
-    FROM users
-    WHERE joined_at >= ?
-    """, (week_ago,))
-    week_users = cursor.fetchone()[0]
+# ============ РАБОТА С НАСТРОЙКАМИ ============
 
-    cursor.execute("""
-    SELECT COUNT(*)
-    FROM users
-    WHERE joined_at >= ?
-    """, (month_ago,))
-    month_users = cursor.fetchone()[0]
+def get_setting(name: str) -> str:
+    """Получить настройку"""
+    conn = get_db()
+    cur = conn.cursor()
+    cur.execute('SELECT value FROM settings WHERE name = ?', (name,))
+    row = cur.fetchone()
+    conn.close()
+    return row['value'] if row else ''
 
-    cursor.execute("""
-    SELECT COUNT(*)
-    FROM users
-    WHERE banned=1
-    """)
-    banned_users = cursor.fetchone()[0]
+def set_setting(name: str, value: str, admin_id: int = None):
+    """Установить настройку"""
+    conn = get_db()
+    cur = conn.cursor()
+    cur.execute('INSERT OR REPLACE INTO settings (name, value) VALUES (?, ?)', (name, value))
+    conn.commit()
+    conn.close()
+    if admin_id:
+        add_admin_log(admin_id, 'set_setting', f'{name}={value}')
 
-    cursor.execute("""
-    SELECT COUNT(*)
-    FROM users
-    WHERE last_activity >= ?
-    """, (day_ago,))
-    active_today = cursor.fetchone()[0]
+def get_all_settings() -> Dict[str, str]:
+    """Получить все настройки"""
+    conn = get_db()
+    cur = conn.cursor()
+    cur.execute('SELECT name, value FROM settings')
+    rows = cur.fetchall()
+    conn.close()
+    return {row['name']: row['value'] for row in rows}
 
+# ============ ЛОГИ ============
+
+def add_admin_log(admin_id: int, action: str, target: str = ''):
+    """Добавить лог действия админа"""
+    conn = get_db()
+    cur = conn.cursor()
+    cur.execute('''
+        INSERT INTO admin_logs (admin_id, action, target, created_at)
+        VALUES (?, ?, ?, ?)
+    ''', (admin_id, action, target, datetime.now()))
+    conn.commit()
+    conn.close()
+
+def add_broadcast_log(admin_id: int, success_count: int, failed_count: int) -> int:
+    """Добавить лог рассылки, вернуть ID"""
+    conn = get_db()
+    cur = conn.cursor()
+    cur.execute('''
+        INSERT INTO broadcasts (admin_id, success_count, failed_count, created_at)
+        VALUES (?, ?, ?, ?)
+    ''', (admin_id, success_count, failed_count, datetime.now()))
+    broadcast_id = cur.lastrowid
+    conn.commit()
+    conn.close()
+    return broadcast_id
+
+# ============ СТАТИСТИКА ============
+
+def get_user_stats() -> Dict:
+    """Получить статистику по пользователям"""
+    conn = get_db()
+    cur = conn.cursor()
+    now = datetime.now()
+    today_start = datetime(now.year, now.month, now.day)
+    week_start = today_start - timedelta(days=7)
+    month_start = today_start - timedelta(days=30)
+    
+    # Всего пользователей
+    cur.execute('SELECT COUNT(*) as count FROM users')
+    total = cur.fetchone()['count']
+    
+    # За сегодня
+    cur.execute('SELECT COUNT(*) as count FROM users WHERE joined_at >= ?', (today_start,))
+    today = cur.fetchone()['count']
+    
+    # За неделю
+    cur.execute('SELECT COUNT(*) as count FROM users WHERE joined_at >= ?', (week_start,))
+    week = cur.fetchone()['count']
+    
+    # За месяц
+    cur.execute('SELECT COUNT(*) as count FROM users WHERE joined_at >= ?', (month_start,))
+    month = cur.fetchone()['count']
+    
+    # Активные за день (last_activity >= сегодня)
+    cur.execute('SELECT COUNT(*) as count FROM users WHERE last_activity >= ?', (today_start,))
+    active_today = cur.fetchone()['count']
+    
+    # Баны
+    cur.execute('SELECT COUNT(*) as count FROM users WHERE banned = 1')
+    banned = cur.fetchone()['count']
+    
+    # Статистика по ссылкам
+    cur.execute('SELECT SUM(chat_links) as chat, SUM(channel_links) as channel, SUM(reserve_links) as reserve FROM users')
+    links = cur.fetchone()
+    
+    conn.close()
+    
     return {
-        "total_users": total_users,
-        "today_users": today_users,
-        "week_users": week_users,
-        "month_users": month_users,
-        "banned_users": banned_users,
-        "active_today": active_today
+        'total': total,
+        'today': today,
+        'week': week,
+        'month': month,
+        'active_today': active_today,
+        'banned': banned,
+        'chat_links': links['chat'] or 0,
+        'channel_links': links['channel'] or 0,
+        'reserve_links': links['reserve'] or 0,
+        'total_links': (links['chat'] or 0) + (links['channel'] or 0) + (links['reserve'] or 0)
     }
 
-
-def get_link_stats():
-
-    cursor.execute("""
-    SELECT COUNT(*)
-    FROM link_logs
-    WHERE category='chat'
-    """)
-    chat = cursor.fetchone()[0]
-
-    cursor.execute("""
-    SELECT COUNT(*)
-    FROM link_logs
-    WHERE category='channel'
-    """)
-    channel = cursor.fetchone()[0]
-
-    cursor.execute("""
-    SELECT COUNT(*)
-    FROM link_logs
-    WHERE category='reserve'
-    """)
-    reserve = cursor.fetchone()[0]
-
-    return {
-        "chat": chat,
-        "channel": channel,
-        "reserve": reserve
-    }
-
-
-def get_daily_stats(days=7):
-
-    result = []
-
-    now = int(time.time())
-
-    for i in range(days):
-
-        start = now - ((i + 1) * 86400)
-        end = now - (i * 86400)
-
-        cursor.execute("""
-        SELECT COUNT(*)
-        FROM users
-        WHERE joined_at BETWEEN ? AND ?
-        """, (start, end))
-
-        users = cursor.fetchone()[0]
-
-        cursor.execute("""
-        SELECT COUNT(*)
-        FROM link_logs
-        WHERE created_at BETWEEN ? AND ?
-        """, (start, end))
-
-        links = cursor.fetchone()[0]
-
-        result.append({
-            "users": users,
-            "links": links
-        })
-
-    return result
-
-
-# =========================
-# EXPORT
-# =========================
-
-def get_export_data():
-
-    cursor.execute("""
-    SELECT
-        user_id,
-        username,
-        first_name,
-        joined_at,
-        last_activity,
-        banned,
-        links_total,
-        chat_links,
-        channel_links,
-        reserve_links
-    FROM users
-    ORDER BY id DESC
-    """)
-
-    return cursor.fetchall()
+# ============ КОЛДЖАУНЫ ============
+from config import CHAT_COOLDOWN, CHANNEL_COOLDOWN, RESERVE_COOLDOWN
