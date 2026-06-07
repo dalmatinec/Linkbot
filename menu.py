@@ -4,9 +4,9 @@ from aiogram.types import (
 )
 
 
-# =========================
+# ==================================
 # USER MENU
-# =========================
+# ==================================
 
 def main_menu():
 
@@ -27,7 +27,7 @@ def main_menu():
 
             [
                 InlineKeyboardButton(
-                    text="🔐 Резервный чат",
+                    text="🔐 Резервный доступ",
                     callback_data="reserve"
                 )
             ],
@@ -49,6 +49,13 @@ def main_menu():
                     text="🌐 Сайт",
                     callback_data="site"
                 )
+            ],
+
+            [
+                InlineKeyboardButton(
+                    text="ℹ️ Информация",
+                    callback_data="info"
+                )
             ]
         ]
     )
@@ -68,9 +75,9 @@ def back_to_menu_keyboard():
     )
 
 
-# =========================
+# ==================================
 # ADMIN PANEL
-# =========================
+# ==================================
 
 def admin_panel_keyboard():
 
@@ -111,14 +118,21 @@ def admin_panel_keyboard():
                     text="📋 Логи",
                     callback_data="admin_logs"
                 )
+            ],
+
+            [
+                InlineKeyboardButton(
+                    text="📥 Экспорт",
+                    callback_data="admin_export"
+                )
             ]
         ]
     )
 
 
-# =========================
+# ==================================
 # SETTINGS
-# =========================
+# ==================================
 
 def admin_settings_keyboard():
 
@@ -158,13 +172,6 @@ def admin_settings_keyboard():
 
             [
                 InlineKeyboardButton(
-                    text="⏳ TTL",
-                    callback_data="set_ttl"
-                )
-            ],
-
-            [
-                InlineKeyboardButton(
                     text="🌐 Сайт",
                     callback_data="set_site"
                 )
@@ -172,19 +179,26 @@ def admin_settings_keyboard():
 
             [
                 InlineKeyboardButton(
+                    text="⏳ TTL",
+                    callback_data="set_ttl"
+                )
+            ],
+
+            [
+                InlineKeyboardButton(
                     text="⬅️ Назад",
-                    callback_data="admin_back"
+                    callback_data="admin_home"
                 )
             ]
         ]
     )
 
 
-# =========================
+# ==================================
 # ADMINS
-# =========================
+# ==================================
 
-def admin_manage_keyboard():
+def admins_keyboard():
 
     return InlineKeyboardMarkup(
         inline_keyboard=[
@@ -211,18 +225,18 @@ def admin_manage_keyboard():
             [
                 InlineKeyboardButton(
                     text="⬅️ Назад",
-                    callback_data="admin_back"
+                    callback_data="admin_home"
                 )
             ]
         ]
     )
 
 
-# =========================
+# ==================================
 # BANS
-# =========================
+# ==================================
 
-def admin_bans_keyboard():
+def bans_keyboard():
 
     return InlineKeyboardMarkup(
         inline_keyboard=[
@@ -242,18 +256,18 @@ def admin_bans_keyboard():
             [
                 InlineKeyboardButton(
                     text="⬅️ Назад",
-                    callback_data="admin_back"
+                    callback_data="admin_home"
                 )
             ]
         ]
     )
 
 
-# =========================
+# ==================================
 # BROADCAST
-# =========================
+# ==================================
 
-def broadcast_keyboard():
+def broadcast_confirm_keyboard():
 
     return InlineKeyboardMarkup(
         inline_keyboard=[
