@@ -1,49 +1,38 @@
 import asyncio
+import logging
 
 from aiogram import Bot, Dispatcher
-from aiogram.client.default import DefaultBotProperties
+from aiogram.enums import ParseMode
+from aiogram.fsm.storage.memory import MemoryStorage
 
-from config import (
-    BOT_TOKEN,
-    OWNER_ID
+from config import BOT_TOKEN
+from db import init_db
+
+# handlers подключим позже, файл уже будет существовать
+import handlers
+
+
+logging.basicConfig(
+    level=logging.INFO
 )
 
-from db import (
-    init_db,
-    add_admin
+bot = Bot(
+    token=BOT_TOKEN,
+    parse_mode=ParseMode.HTML
 )
 
-from handlers import router as handlers_router
-from admin import router as admin_router
+dp = Dispatcher(storage=MemoryStorage())
 
 
 async def main():
 
+    # инициализация базы
     init_db()
 
-    add_admin(
-        OWNER_ID,
-        "owner"
-    )
+    # регистрация роутеров/хендлеров
+    dp.include_router(handlers.router)
 
-    bot = Bot(
-        token=BOT_TOKEN,
-        default=DefaultBotProperties(
-            parse_mode="HTML"
-        )
-    )
-
-    dp = Dispatcher()
-
-    dp.include_router(
-        admin_router
-    )
-
-    dp.include_router(
-        handlers_router
-    )
-
-    print("Bot started")
+    print("Bot started...")
 
     await dp.start_polling(bot)
 
