@@ -297,6 +297,21 @@ def is_admin(user_id):
     return cursor.fetchone() is not None
 
 
+def get_admins():
+
+    cursor.execute("""
+    SELECT
+        user_id,
+        username,
+        role,
+        created_at
+    FROM admins
+    ORDER BY created_at DESC
+    """)
+
+    return cursor.fetchall()
+
+
 # =========================
 # SETTINGS
 # =========================
@@ -373,13 +388,13 @@ def add_link_log(user_id, category):
 
 def update_category_time(user_id, category):
 
-    field_map = {
+    fields = {
         "chat": "last_chat_time",
         "channel": "last_channel_time",
         "reserve": "last_reserve_time"
     }
 
-    field = field_map.get(category)
+    field = fields.get(category)
 
     if not field:
         return
@@ -433,8 +448,39 @@ def add_admin_log(admin_id, action, target=""):
     conn.commit()
 
 
+def get_admin_logs(limit=50):
+
+    cursor.execute("""
+    SELECT
+        admin_id,
+        action,
+        target,
+        created_at
+    FROM admin_logs
+    ORDER BY id DESC
+    LIMIT ?
+    """, (limit,))
+
+    return cursor.fetchall()
+
+
+def get_link_logs(limit=50):
+
+    cursor.execute("""
+    SELECT
+        user_id,
+        category,
+        created_at
+    FROM link_logs
+    ORDER BY id DESC
+    LIMIT ?
+    """, (limit,))
+
+    return cursor.fetchall()
+
+
 # =========================
-# BROADCAST
+# BROADCASTS
 # =========================
 
 def add_broadcast(admin_id, success, failed):
@@ -457,6 +503,23 @@ def add_broadcast(admin_id, success, failed):
     ))
 
     conn.commit()
+
+
+def get_broadcasts(limit=20):
+
+    cursor.execute("""
+    SELECT
+        admin_id,
+        success_count,
+        failed_count,
+        created_at
+    FROM broadcasts
+    ORDER BY id DESC
+    LIMIT ?
+    """, (limit,))
+
+    return cursor.fetchall()
+
 
 # =========================
 # STATS
@@ -500,7 +563,7 @@ def get_stats():
     cursor.execute("""
     SELECT COUNT(*)
     FROM users
-    WHERE banned = 1
+    WHERE banned=1
     """)
     banned_users = cursor.fetchone()[0]
 
@@ -516,8 +579,8 @@ def get_stats():
         "today_users": today_users,
         "week_users": week_users,
         "month_users": month_users,
-        "active_today": active_today,
-        "banned_users": banned_users
+        "banned_users": banned_users,
+        "active_today": active_today
     }
 
 
@@ -584,73 +647,6 @@ def get_daily_stats(days=7):
         })
 
     return result
-
-
-# =========================
-# ADMINS
-# =========================
-
-def get_admins():
-
-    cursor.execute("""
-    SELECT user_id, username, role, created_at
-    FROM admins
-    ORDER BY created_at DESC
-    """)
-
-    return cursor.fetchall()
-
-
-# =========================
-# LOGS
-# =========================
-
-def get_admin_logs(limit=50):
-
-    cursor.execute("""
-    SELECT admin_id,
-           action,
-           target,
-           created_at
-    FROM admin_logs
-    ORDER BY id DESC
-    LIMIT ?
-    """, (limit,))
-
-    return cursor.fetchall()
-
-
-def get_link_logs(limit=50):
-
-    cursor.execute("""
-    SELECT user_id,
-           category,
-           created_at
-    FROM link_logs
-    ORDER BY id DESC
-    LIMIT ?
-    """, (limit,))
-
-    return cursor.fetchall()
-
-
-# =========================
-# BROADCASTS
-# =========================
-
-def get_broadcasts(limit=20):
-
-    cursor.execute("""
-    SELECT admin_id,
-           success_count,
-           failed_count,
-           created_at
-    FROM broadcasts
-    ORDER BY id DESC
-    LIMIT ?
-    """, (limit,))
-
-    return cursor.fetchall()
 
 
 # =========================
