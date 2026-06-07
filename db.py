@@ -299,6 +299,20 @@ def get_all_users() -> List[Dict]:
     conn.close()
     return [dict(row) for row in rows]
 
+def get_link_logs(limit: int = 100) -> List[Dict]:
+    conn = get_db()
+    cur = conn.cursor()
+    cur.execute('''
+        SELECT ll.*, u.username, u.first_name 
+        FROM link_logs ll
+        JOIN users u ON ll.user_id = u.user_id
+        ORDER BY ll.created_at DESC
+        LIMIT ?
+    ''', (limit,))
+    rows = cur.fetchall()
+    conn.close()
+    return [dict(row) for row in rows]
+
 def get_recent_logs(limit: int = 30) -> List[Dict]:
     conn = get_db()
     cur = conn.cursor()
