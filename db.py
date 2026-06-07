@@ -2,7 +2,8 @@ import sqlite3
 import time
 
 conn = sqlite3.connect(
-    "users.db"
+    "users.db",
+    check_same_thread=False
 )
 
 cursor = conn.cursor()
@@ -15,16 +16,20 @@ def init_db():
 
         id INTEGER PRIMARY KEY AUTOINCREMENT,
 
-        user_id INTEGER,
+        user_id INTEGER UNIQUE,
         username TEXT,
         first_name TEXT,
 
-        joined_at TEXT,
-
-        last_link_time INTEGER DEFAULT 0,
-        last_message_time INTEGER DEFAULT 0,
+        joined_at INTEGER,
+        last_activity INTEGER,
 
         banned INTEGER DEFAULT 0,
+
+        links_total INTEGER DEFAULT 0,
+
+        chat_links INTEGER DEFAULT 0,
+        channel_links INTEGER DEFAULT 0,
+        reserve_links INTEGER DEFAULT 0,
 
         last_chat_time INTEGER DEFAULT 0,
         last_channel_time INTEGER DEFAULT 0,
@@ -36,7 +41,11 @@ def init_db():
     CREATE TABLE IF NOT EXISTS admins (
 
         user_id INTEGER PRIMARY KEY,
-        username TEXT
+
+        username TEXT,
+        role TEXT,
+
+        created_at INTEGER
     )
     """)
 
@@ -49,41 +58,102 @@ def init_db():
     """)
 
     cursor.execute("""
-    CREATE TABLE IF NOT EXISTS stats (
+    CREATE TABLE IF NOT EXISTS link_logs (
 
-        total_links INTEGER DEFAULT 0
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+
+        user_id INTEGER,
+        category TEXT,
+
+        created_at INTEGER
     )
     """)
 
     cursor.execute("""
-    SELECT * FROM stats
+    CREATE TABLE IF NOT EXISTS admin_logs (
+
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+
+        admin_id INTEGER,
+        action TEXT,
+        target TEXT,
+
+        created_at INTEGER
+    )
     """)
 
-    if not cursor.fetchone():
+    cursor.execute("""
+    CREATE TABLE IF NOT EXISTS broadcasts (
 
-        cursor.execute("""
-        INSERT INTO stats (
-            total_links
-        )
-        VALUES (0)
-        """)
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+
+        admin_id INTEGER,
+
+        success_count INTEGER,
+        failed_count INTEGER,
+
+        created_at INTEGER
+    )
+    """)
+
+    cursor.execute("""
+    CREATE INDEX IF NOT EXISTS idx_users_user_id
+    ON users(user_id)
+    """)
+
+    cursor.execute("""
+    CREATE INDEX IF NOT EXISTS idx_users_username
+    ON users(username)
+    """)
+
+    cursor.execute("""
+    CREATE INDEX IF NOT EXISTS idx_link_logs_user
+    ON link_logs(user_id)
+    """)
 
     conn.commit()
 
 
+# =========================
+# USERS
+# =========================
+
 def add_user(user_id, username, first_name):
+
+    now = int(time.time())
 
     cursor.execute("""
     INSERT OR IGNORE INTO users (
+
         user_id,
         username,
-        first_name
+        first_name,
+
+        joined_at,
+        last_activity
+
     )
-    VALUES (?, ?, ?)
+    VALUES (?, ?, ?, ?, ?)
     """, (
         user_id,
         username,
-        first_name
+        first_name,
+        now,
+        now
+    ))
+
+    cursor.execute("""
+    UPDATE users
+    SET
+        username=?,
+        first_name=?,
+        last_activity=?
+    WHERE user_id=?
+    """, (
+        username,
+        first_name,
+        now,
+        user_id
     ))
 
     conn.commit()
@@ -92,7 +162,8 @@ def add_user(user_id, username, first_name):
 def get_user(user_id):
 
     cursor.execute("""
-    SELECT * FROM users
+    SELECT *
+    FROM users
     WHERE user_id=?
     """, (user_id,))
 
@@ -101,11 +172,12 @@ def get_user(user_id):
 
 def get_user_by_username(username):
 
-    username = username.replace("@", "")
+    username = username.replace("@", "").lower()
 
     cursor.execute("""
-    SELECT * FROM users
-    WHERE username=?
+    SELECT *
+    FROM users
+    WHERE LOWER(username)=?
     """, (username,))
 
     return cursor.fetchone()
@@ -116,10 +188,29 @@ def get_all_users():
     cursor.execute("""
     SELECT user_id
     FROM users
+    WHERE banned=0
     """)
 
     return cursor.fetchall()
 
+
+def update_activity(user_id):
+
+    cursor.execute("""
+    UPDATE users
+    SET last_activity=?
+    WHERE user_id=?
+    """, (
+        int(time.time()),
+        user_id
+    ))
+
+    conn.commit()
+
+
+# =========================
+# BAN
+# =========================
 
 def ban_user(user_id):
 
@@ -146,66 +237,46 @@ def unban_user(user_id):
 def is_banned(user_id):
 
     cursor.execute("""
-    SELECT banned FROM users
+    SELECT banned
+    FROM users
     WHERE user_id=?
     """, (user_id,))
 
-    user = cursor.fetchone()
+    result = cursor.fetchone()
 
-    if not user:
+    if not result:
         return False
 
-    return bool(user[0])
+    return bool(result[0])
 
 
-def add_admin(user_id, username):
+# =========================
+# ADMINS
+# =========================
+
+def add_admin(user_id, username, role="admin"):
 
     cursor.execute("""
-    INSERT OR IGNORE INTO admins (
+    INSERT OR REPLACE INTO admins (
+
         user_id,
-        username
+        username,
+        role,
+        created_at
+
     )
-    VALUES (?, ?)
+    VALUES (?, ?, ?, ?)
     """, (
         user_id,
-        username
+        username,
+        role,
+        int(time.time())
     ))
 
     conn.commit()
 
 
-def remove_admin(value):
-
-    if str(value).isdigit():
-
-        cursor.execute("""
-        DELETE FROM admins
-        WHERE user_id=?
-        """, (int(value),))
-
-    else:
-
-        username = str(value).replace("@", "")
-
-        cursor.execute("""
-        DELETE FROM admins
-        WHERE username=?
-        """, (username,))
-
-    conn.commit()
-
-
-def remove_admin_by_username(username):
-
-    cursor.execute("""
-    DELETE FROM admins
-    WHERE username=?
-    """, (username,))
-
-    conn.commit()
-
-
-def remove_admin_by_id(user_id):
+def remove_admin(user_id):
 
     cursor.execute("""
     DELETE FROM admins
@@ -218,44 +289,100 @@ def remove_admin_by_id(user_id):
 def is_admin(user_id):
 
     cursor.execute("""
-    SELECT * FROM admins
+    SELECT *
+    FROM admins
     WHERE user_id=?
     """, (user_id,))
 
     return cursor.fetchone() is not None
 
 
-def update_link_time(user_id, timestamp):
+# =========================
+# SETTINGS
+# =========================
+
+def set_setting(name, value):
 
     cursor.execute("""
-    UPDATE users
-    SET last_link_time=?
-    WHERE user_id=?
+    INSERT OR REPLACE INTO settings (
+        name,
+        value
+    )
+    VALUES (?, ?)
     """, (
-        timestamp,
-        user_id
+        name,
+        str(value)
     ))
 
     conn.commit()
 
 
-def update_message_time(user_id, timestamp):
+def get_setting(name):
 
     cursor.execute("""
-    UPDATE users
-    SET last_message_time=?
-    WHERE user_id=?
+    SELECT value
+    FROM settings
+    WHERE name=?
+    """, (name,))
+
+    result = cursor.fetchone()
+
+    if result:
+        return result[0]
+
+    return None
+
+
+# =========================
+# LINKS
+# =========================
+
+def add_link_log(user_id, category):
+
+    now = int(time.time())
+
+    cursor.execute("""
+    INSERT INTO link_logs (
+        user_id,
+        category,
+        created_at
+    )
+    VALUES (?, ?, ?)
     """, (
-        timestamp,
-        user_id
+        user_id,
+        category,
+        now
     ))
+
+    field = f"{category}_links"
+
+    cursor.execute(f"""
+    UPDATE users
+    SET
+        links_total = links_total + 1,
+        {field} = {field} + 1
+    WHERE user_id=?
+    """, (user_id,))
 
     conn.commit()
 
+
+# =========================
+# COOLDOWN
+# =========================
 
 def update_category_time(user_id, category):
 
-    field = f"last_{category}_time"
+    field_map = {
+        "chat": "last_chat_time",
+        "channel": "last_channel_time",
+        "reserve": "last_reserve_time"
+    }
+
+    field = field_map.get(category)
+
+    if not field:
+        return
 
     cursor.execute(f"""
     UPDATE users
@@ -271,78 +398,62 @@ def update_category_time(user_id, category):
 
 def get_category_time(user, category):
 
-    fields = {
-        "chat": 8,
-        "channel": 9,
-        "reserve": 10
+    indexes = {
+        "chat": 10,
+        "channel": 11,
+        "reserve": 12
     }
 
-    return user[fields[category]]
+    return user[indexes[category]]
 
 
-def set_setting(name, value):
+# =========================
+# LOGS
+# =========================
+
+def add_admin_log(admin_id, action, target=""):
 
     cursor.execute("""
-    INSERT OR REPLACE INTO settings (
-        name,
-        value
+    INSERT INTO admin_logs (
+
+        admin_id,
+        action,
+        target,
+        created_at
+
     )
-    VALUES (?, ?)
+    VALUES (?, ?, ?, ?)
     """, (
-        name,
-        value
+        admin_id,
+        action,
+        target,
+        int(time.time())
     ))
 
     conn.commit()
 
 
-def get_setting(name):
+# =========================
+# BROADCAST
+# =========================
+
+def add_broadcast(admin_id, success, failed):
 
     cursor.execute("""
-    SELECT value FROM settings
-    WHERE name=?
-    """, (name,))
+    INSERT INTO broadcasts (
 
-    result = cursor.fetchone()
+        admin_id,
+        success_count,
+        failed_count,
+        created_at
 
-    if result:
-        return result[0]
-
-    return None
-
-
-def increment_links():
-
-    cursor.execute("""
-    UPDATE stats
-    SET total_links = total_links + 1
-    """)
+    )
+    VALUES (?, ?, ?, ?)
+    """, (
+        admin_id,
+        success,
+        failed,
+        int(time.time())
+    ))
 
     conn.commit()
-
-
-def get_stats():
-
-    cursor.execute("""
-    SELECT COUNT(*)
-    FROM users
-    """)
-
-    users = cursor.fetchone()[0]
-
-    cursor.execute("""
-    SELECT COUNT(*)
-    FROM users
-    WHERE banned=1
-    """)
-
-    banned = cursor.fetchone()[0]
-
-    cursor.execute("""
-    SELECT total_links
-    FROM stats
-    """)
-
-    links = cursor.fetchone()[0]
-
-    return users, banned, links
