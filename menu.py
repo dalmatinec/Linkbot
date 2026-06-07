@@ -4,85 +4,270 @@ from aiogram.types import (
 )
 
 
+# =========================
+# USER MENU
+# =========================
+
 def main_menu():
 
-    keyboard = [
-        [
-            InlineKeyboardButton(
-                text="Наш чат 💬",
-                callback_data="chat"
-            ),
-
-            InlineKeyboardButton(
-                text="Канал 📺",
-                callback_data="channel"
-            )
-        ],
-
-        [
-            InlineKeyboardButton(
-                text="Наш сайт-визитка 🌐",
-                callback_data="site"
-            )
-        ],
-
-        [
-            InlineKeyboardButton(
-                text="Резервный чат 🔐",
-                callback_data="reserve"
-            )
-        ],
-
-        [
-            InlineKeyboardButton(
-                text="Оператор сис 🤍",
-                callback_data="operator1"
-            ),
-
-            InlineKeyboardButton(
-                text="Оператор бро 💚",
-                callback_data="operator2"
-            )
-        ]
-    ]
-
     return InlineKeyboardMarkup(
-        inline_keyboard=keyboard
+        inline_keyboard=[
+
+            [
+                InlineKeyboardButton(
+                    text="💬 Основной чат",
+                    callback_data="chat"
+                ),
+
+                InlineKeyboardButton(
+                    text="📺 Канал",
+                    callback_data="channel"
+                )
+            ],
+
+            [
+                InlineKeyboardButton(
+                    text="🔐 Резервный чат",
+                    callback_data="reserve"
+                )
+            ],
+
+            [
+                InlineKeyboardButton(
+                    text="🤍 Оператор SIS",
+                    callback_data="operator1"
+                ),
+
+                InlineKeyboardButton(
+                    text="💚 Оператор BRO",
+                    callback_data="operator2"
+                )
+            ],
+
+            [
+                InlineKeyboardButton(
+                    text="🌐 Сайт",
+                    callback_data="site"
+                )
+            ]
+        ]
     )
 
 
 def back_to_menu_keyboard():
 
-    keyboard = [
-        [
-            InlineKeyboardButton(
-                text="⬅️ Главное меню",
-                callback_data="main_menu"
-            )
-        ]
-    ]
-
     return InlineKeyboardMarkup(
-        inline_keyboard=keyboard
+        inline_keyboard=[
+            [
+                InlineKeyboardButton(
+                    text="⬅️ Главное меню",
+                    callback_data="main_menu"
+                )
+            ]
+        ]
     )
 
 
-def confirm_broadcast_keyboard():
+# =========================
+# ADMIN PANEL
+# =========================
 
-    keyboard = [
-        [
-            InlineKeyboardButton(
-                text="✅ Отправить",
-                callback_data="broadcast_yes"
-            ),
-
-            InlineKeyboardButton(
-                text="❌ Отмена",
-                callback_data="broadcast_no"
-            )
-        ]
-    ]
+def admin_panel_keyboard():
 
     return InlineKeyboardMarkup(
-        inline_keyboard=keyboard
+        inline_keyboard=[
+
+            [
+                InlineKeyboardButton(
+                    text="📊 Статистика",
+                    callback_data="admin_stats"
+                ),
+
+                InlineKeyboardButton(
+                    text="📨 Рассылка",
+                    callback_data="admin_broadcast"
+                )
+            ],
+
+            [
+                InlineKeyboardButton(
+                    text="⚙️ Настройки",
+                    callback_data="admin_settings"
+                ),
+
+                InlineKeyboardButton(
+                    text="👥 Админы",
+                    callback_data="admin_admins"
+                )
+            ],
+
+            [
+                InlineKeyboardButton(
+                    text="🚫 Баны",
+                    callback_data="admin_bans"
+                ),
+
+                InlineKeyboardButton(
+                    text="📋 Логи",
+                    callback_data="admin_logs"
+                )
+            ]
+        ]
+    )
+
+
+# =========================
+# SETTINGS
+# =========================
+
+def admin_settings_keyboard():
+
+    return InlineKeyboardMarkup(
+        inline_keyboard=[
+
+            [
+                InlineKeyboardButton(
+                    text="💬 Чат",
+                    callback_data="set_chat"
+                ),
+
+                InlineKeyboardButton(
+                    text="📺 Канал",
+                    callback_data="set_channel"
+                )
+            ],
+
+            [
+                InlineKeyboardButton(
+                    text="🔐 Резерв",
+                    callback_data="set_reserve"
+                )
+            ],
+
+            [
+                InlineKeyboardButton(
+                    text="🤍 SIS",
+                    callback_data="set_operator1"
+                ),
+
+                InlineKeyboardButton(
+                    text="💚 BRO",
+                    callback_data="set_operator2"
+                )
+            ],
+
+            [
+                InlineKeyboardButton(
+                    text="⏳ TTL",
+                    callback_data="set_ttl"
+                )
+            ],
+
+            [
+                InlineKeyboardButton(
+                    text="🌐 Сайт",
+                    callback_data="set_site"
+                )
+            ],
+
+            [
+                InlineKeyboardButton(
+                    text="⬅️ Назад",
+                    callback_data="admin_back"
+                )
+            ]
+        ]
+    )
+
+
+# =========================
+# ADMINS
+# =========================
+
+def admin_manage_keyboard():
+
+    return InlineKeyboardMarkup(
+        inline_keyboard=[
+
+            [
+                InlineKeyboardButton(
+                    text="➕ Добавить",
+                    callback_data="admin_add"
+                ),
+
+                InlineKeyboardButton(
+                    text="➖ Удалить",
+                    callback_data="admin_remove"
+                )
+            ],
+
+            [
+                InlineKeyboardButton(
+                    text="📋 Список",
+                    callback_data="admin_list"
+                )
+            ],
+
+            [
+                InlineKeyboardButton(
+                    text="⬅️ Назад",
+                    callback_data="admin_back"
+                )
+            ]
+        ]
+    )
+
+
+# =========================
+# BANS
+# =========================
+
+def admin_bans_keyboard():
+
+    return InlineKeyboardMarkup(
+        inline_keyboard=[
+
+            [
+                InlineKeyboardButton(
+                    text="🔨 Забанить",
+                    callback_data="ban_user"
+                ),
+
+                InlineKeyboardButton(
+                    text="🔓 Разбанить",
+                    callback_data="unban_user"
+                )
+            ],
+
+            [
+                InlineKeyboardButton(
+                    text="⬅️ Назад",
+                    callback_data="admin_back"
+                )
+            ]
+        ]
+    )
+
+
+# =========================
+# BROADCAST
+# =========================
+
+def broadcast_keyboard():
+
+    return InlineKeyboardMarkup(
+        inline_keyboard=[
+
+            [
+                InlineKeyboardButton(
+                    text="✅ Отправить",
+                    callback_data="broadcast_yes"
+                ),
+
+                InlineKeyboardButton(
+                    text="❌ Отмена",
+                    callback_data="broadcast_no"
+                )
+            ]
+        ]
     )
