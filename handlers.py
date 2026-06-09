@@ -1,287 +1,334 @@
-import asyncio
-from datetime import datetime
+handlers.py (часть 1)
 
-from aiogram import Router, F, Bot
-from aiogram.types import Message, CallbackQuery
+from aiogram import Router, F
+from aiogram.types import (
+Message,
+CallbackQuery
+)
 from aiogram.filters import Command
 
 from db import (
-    register_user, update_activity, get_setting, can_get_link,
-    update_link_usage, add_admin_log
+add_user,
+update_activity,
+get_user,
+is_banned,
+get_setting,
+is_admin
 )
-from keyboards import get_link_keyboard, get_operators_keyboard
-from config import OWNER_ID, LOG_CHANNEL_ID
+
+from menu import (
+start_menu,
+support_menu,
+bot_link_menu
+)
+
+from texts import (
+DEFAULT_START_TEXT,
+BANNED_TEXT,
+LINK_COMMAND_TEXT
+)
+
+from datetime import datetime, timedelta
+
+from db import (
+    get_setting,
+    add_link_log,
+    increase_link_counter,
+    update_activity
+)
 
 router = Router()
 
-# ==================== КОМАНДА START ====================
+async def check_ban(user_id: int):
+return is_banned(user_id)
+
 @router.message(Command("start"))
-async def cmd_start(message: Message):
-    """Обработчик команды /start - регистрация пользователя"""
-    user = message.from_user
-    
-    # Регистрируем пользователя (уже в middleware, но на всякий случай)
-    register_user(
-        user_id=user.id,
-        username=user.username or "",
-        first_name=user.first_name or ""
-    )
-    
-    # Приветственное сообщение
-    from menu import get_main_menu
-    main_menu = await get_main_menu()
-    
-    await message.answer(
-        f"👋 Привет, {user.first_name}!\n\n"
-        f"Я бот для получения доступа к ресурсам.\n\n"
-        f"Используй кнопки меню для навигации:",
-        reply_markup=main_menu
-    )
-    
-    # Лог в канал
-    if LOG_CHANNEL_ID:
-        try:
-            await message.bot.send_message(
-                LOG_CHANNEL_ID,
-                f"🆕 Новый пользователь: {user.first_name} (@{user.username}) [ID: {user.id}]"
-            )
-        except:
-            pass
+async def start_command(message: Message):
+user = message.from_user
 
-# ==================== КОМАНДА LINK ====================
+add_user(
+    user.id,
+    user.username,
+    user.first_name
+)
+
+update_activity(user.id)
+
+if await check_ban(user.id):
+    await message.answer(BANNED_TEXT)
+    return
+
+text = get_setting("start_text")
+
+if not text:
+    text = DEFAULT_START_TEXT
+
+photo = get_setting("start_photo")
+
+if photo:
+    await message.answer_photo(
+        photo=photo,
+        caption=text,
+        reply_markup=start_menu()
+    )
+else:
+    await message.answer(
+        text,
+        reply_markup=start_menu()
+    )
+
+@router.message(Command("help"))
+async def help_command(message: Message):
+text = (
+"📚 Доступные команды\n\n"
+"/start - главное меню\n"
+"/help - помощь\n"
+)
+
+if is_admin(message.from_user.id):
+    text += "\n/admin - админ панель"
+
+await message.answer(text)
+
 @router.message(Command("link"))
-async def cmd_link(message: Message):
-    """Обработчик команды /link - получить ссылку на бота"""
-    bot_info = await message.bot.get_me()
-    bot_username = bot_info.username
-    
-    await message.answer(
-        "🔗 <b>Для получения ссылки откройте бота</b>\n\n"
-        f"Нажмите на кнопку ниже, чтобы открыть бота:",
-        parse_mode="HTML",
-        reply_markup=get_link_keyboard("site", f"https://t.me/{bot_username}")
-    )
+async def link_command(message: Message):
+if message.chat.type == "private":
+return
 
-# ==================== ОСНОВНОЙ ЧАТ ====================
-@router.message(F.text == "💬 Основной чат")
-async def get_chat_link(message: Message):
-    """Выдача ссылки на основной чат"""
-    user_id = message.from_user.id
-    
-    # Проверяем кд
-    can, seconds = can_get_link(user_id, 'chat')
-    
-    if not can:
-        hours = seconds // 3600
-        minutes = (seconds % 3600) // 60
-        await message.answer(
-            f"⏳ Вы уже получали ссылку на чат!\n\n"
-            f"Следующую ссылку можно получить через {hours}ч {minutes}мин"
-        )
-        return
-    
-    # Получаем ссылку из настроек
-    chat_link = get_setting('chat_link')
-    
-    if not chat_link:
-        await message.answer("❌ Ссылка на чат еще не настроена администратором")
-        return
-    
-    # Обновляем статистику и логируем
-    update_link_usage(user_id, 'chat')
-    
-    await message.answer(
-        "🔗 <b>Вот ссылка на основной чат:</b>\n\n"
-        f"{chat_link}\n\n"
-        "⚠️ Ссылка действительна для вас одного!\n"
-        "Не передавайте её другим.",
-        parse_mode="HTML",
-        reply_markup=get_link_keyboard("chat", chat_link)
-    )
-    
-    # Лог в канал
-    if LOG_CHANNEL_ID:
-        user = message.from_user
-        await message.bot.send_message(
-            LOG_CHANNEL_ID,
-            f"🔗 Пользователь {user.first_name} (@{user.username}) [ID: {user.id}] получил ссылку на ЧАТ"
-        )
+me = await message.bot.get_me()
 
-# ==================== КАНАЛ ====================
-@router.message(F.text == "📺 Канал")
-async def get_channel_link(message: Message):
-    """Выдача ссылки на канал"""
-    user_id = message.from_user.id
-    
-    # Проверяем кд
-    can, seconds = can_get_link(user_id, 'channel')
-    
-    if not can:
-        hours = seconds // 3600
-        minutes = (seconds % 3600) // 60
-        await message.answer(
-            f"⏳ Вы уже получали ссылку на канал!\n\n"
-            f"Следующую ссылку можно получить через {hours}ч {minutes}мин"
-        )
-        return
-    
-    # Получаем ссылку из настроек
-    channel_link = get_setting('channel_link')
-    
-    if not channel_link:
-        await message.answer("❌ Ссылка на канал еще не настроена администратором")
-        return
-    
-    # Обновляем статистику и логируем
-    update_link_usage(user_id, 'channel')
-    
-    await message.answer(
-        "🔗 <b>Вот ссылка на канал:</b>\n\n"
-        f"{channel_link}\n\n"
-        "⚠️ Ссылка действительна для вас одного!\n"
-        "Не передавайте её другим.",
-        parse_mode="HTML",
-        reply_markup=get_link_keyboard("channel", channel_link)
+await message.reply(
+    LINK_COMMAND_TEXT,
+    reply_markup=bot_link_menu(
+        me.username
     )
-    
-    # Лог в канал
-    if LOG_CHANNEL_ID:
-        user = message.from_user
-        await message.bot.send_message(
-            LOG_CHANNEL_ID,
-            f"🔗 Пользователь {user.first_name} (@{user.username}) [ID: {user.id}] получил ссылку на КАНАЛ"
-        )
+)
 
-# ==================== ОПЕРАТОР ====================
-@router.message(F.text == "🤍 Оператор")
-async def get_operator(message: Message):
-    """Показать кнопки операторов"""
-    # Получаем ссылки из настроек
-    operator1_name = get_setting('operator1_name')
-    operator1_link = get_setting('operator1_link')
-    operator2_name = get_setting('operator2_name')
-    operator2_link = get_setting('operator2_link')
-    
-    # Проверяем, есть ли хоть один оператор
-    if not operator1_link and not operator2_link:
-        await message.answer("❌ Операторы еще не настроены администратором")
-        return
-    
-    keyboard = get_operators_keyboard()
-    
-    if keyboard is None:
-        await message.answer("❌ Нет доступных операторов")
-        return
-    
-    await message.answer(
-        "👨‍💻 <b>Выберите оператора для связи:</b>\n\n"
-        "Нажмите на кнопку ниже, чтобы написать оператору:",
-        parse_mode="HTML",
-        reply_markup=keyboard
-    )
-    
-    # Лог
-    user = message.from_user
-    if LOG_CHANNEL_ID:
-        await message.bot.send_message(
-            LOG_CHANNEL_ID,
-            f"👤 Пользователь {user.first_name} (@{user.username}) [ID: {user.id}] запросил оператора"
-        )
+@router.callback_query(
+F.data == "back_start"
+)
+async def back_start(callback: CallbackQuery):
+text = get_setting("start_text")
 
-# ==================== САЙТ ====================
-@router.message(F.text == "🌐 Сайт")
-async def get_site_link(message: Message):
-    """Выдача ссылки на сайт"""
-    site_link = get_setting('site_link')
-    
-    if not site_link:
-        await message.answer("❌ Ссылка на сайт еще не настроена администратором")
-        return
-    
-    await message.answer(
-        "🌐 <b>Наш сайт:</b>\n\n"
-        f"{site_link}",
-        parse_mode="HTML",
-        reply_markup=get_link_keyboard("site", site_link)
-    )
+if not text:
+    text = DEFAULT_START_TEXT
 
-# ==================== РЕЗЕРВНЫЙ ДОСТУП ====================
-@router.message(F.text == "🔐 Резервный доступ")
-async def get_reserve_link(message: Message):
-    """Выдача резервной ссылки"""
-    user_id = message.from_user.id
-    
-    # Проверяем кд (24 часа обычно)
-    can, seconds = can_get_link(user_id, 'reserve')
-    
-    if not can:
-        hours = seconds // 3600
-        minutes = (seconds % 3600) // 60
-        await message.answer(
-            f"⏳ Вы уже получали резервную ссылку!\n\n"
-            f"Следующую ссылку можно получить через {hours}ч {minutes}мин"
-        )
-        return
-    
-    # Получаем ссылку из настроек
-    reserve_link = get_setting('reserve_link')
-    
-    if not reserve_link:
-        await message.answer("❌ Резервная ссылка еще не настроена администратором")
-        return
-    
-    # Обновляем статистику и логируем
-    update_link_usage(user_id, 'reserve')
-    
-    await message.answer(
-        "🔐 <b>Резервный доступ:</b>\n\n"
-        f"{reserve_link}\n\n"
-        "⚠️ Используйте только если основные ссылки не работают!\n"
-        "Ссылка действительна 24 часа.",
-        parse_mode="HTML",
-        reply_markup=get_link_keyboard("reserve", reserve_link)
-    )
-    
-    # Лог в канал
-    if LOG_CHANNEL_ID:
-        user = message.from_user
-        await message.bot.send_message(
-            LOG_CHANNEL_ID,
-            f"🔗 Пользователь {user.first_name} (@{user.username}) [ID: {user.id}] получил РЕЗЕРВНУЮ ссылку"
-        )
+photo = get_setting("start_photo")
 
-# ==================== ИНФОРМАЦИЯ ====================
-@router.message(F.text == "ℹ️ Информация")
-async def get_info(message: Message):
-    """Показать информационное сообщение"""
-    info_text = get_setting('info_text')
-    
-    if not info_text:
-        info_text = "ℹ️ <b>Информация о боте</b>\n\n"
-        info_text += "Этот бот предоставляет доступ к ресурсам.\n"
-        info_text += "Используйте кнопки меню для навигации."
-    
-    await message.answer(
-        info_text,
-        parse_mode="HTML"
-    )
-
-# ==================== КНОПКА ЗАКРЫТЬ ====================
-@router.callback_query(F.data == "close")
-async def close_callback(callback: CallbackQuery):
-    """Закрыть инлайн кнопку"""
+if photo:
     await callback.message.delete()
+
+    await callback.message.answer_photo(
+        photo=photo,
+        caption=text,
+        reply_markup=start_menu()
+    )
+else:
+    await callback.message.edit_text(
+        text,
+        reply_markup=start_menu()
+    )
+
+await callback.answer()
+
+@router.callback_query(
+F.data == "rules_support"
+)
+async def rules_support(callback: CallbackQuery):
+await callback.message.edit_text(
+"Выберите нужный раздел.",
+reply_markup=support_menu()
+)
+
+await callback.answer()
+
+@router.callback_query(
+F.data == "show_rules"
+)
+async def show_rules(callback: CallbackQuery):
+rules = get_setting("rules_text")
+
+if not rules:
+    rules = "Правила пока не настроены."
+
+await callback.message.edit_text(
+    rules,
+    reply_markup=support_menu()
+)
+
+await callback.answer()
+
+def get_cached_link(user_id, category):
+    user_id = str(user_id)
+
+    if user_id not in user_links_cache:
+        return None
+
+    if category not in user_links_cache[user_id]:
+        return None
+
+    data = user_links_cache[user_id][category]
+
+    expires = datetime.fromisoformat(
+        data["expires"]
+    )
+
+    if datetime.now() >= expires:
+        return None
+
+    return data
+
+
+def save_cached_link(
+    user_id,
+    category,
+    link,
+    expires
+):
+    user_id = str(user_id)
+
+    if user_id not in user_links_cache:
+        user_links_cache[user_id] = {}
+
+    user_links_cache[user_id][category] = {
+        "link": link,
+        "expires": expires.isoformat()
+    }
+
+#Получение ссылок
+async def process_link(
+    callback: CallbackQuery,
+    category: str
+):
+    update_activity(
+        callback.from_user.id
+    )
+
+    cached = get_cached_link(
+        callback.from_user.id,
+        category
+    )
+
+    if cached:
+        await callback.message.answer(
+            f"🔗 Ваша ссылка:\n\n{cached['link']}"
+        )
+
+        await callback.answer()
+
+        return
+
+#Получение настроек
+if category == "chat":
+        target = get_setting("chat_id")
+        cooldown = int(
+            get_setting("chat_cooldown")
+        )
+
+    elif category == "channel":
+        target = get_setting("channel_id")
+        cooldown = int(
+            get_setting("channel_cooldown")
+        )
+
+    else:
+        target = get_setting("reserve_id")
+        cooldown = int(
+            get_setting("reserve_cooldown")
+        )
+
+#проверка
+if not target:
+        await callback.answer(
+            "Ссылка не настроена.",
+            show_alert=True
+        )
+        return
+
+#создание ссылки
+try:
+        invite = await callback.bot.create_chat_invite_link(
+            chat_id=int(target),
+            expire_date=datetime.now()
+            + timedelta(minutes=cooldown),
+
+            member_limit=1
+        )
+
+    except Exception:
+        await callback.answer(
+            "Ошибка создания ссылки.",
+            show_alert=True
+        )
+        return
+
+#сохраняем
+save_cached_link(
+        callback.from_user.id,
+        category,
+        invite.invite_link,
+        datetime.now()
+        + timedelta(minutes=cooldown)
+    )
+
+    add_link_log(
+        callback.from_user.id,
+        category
+    )
+
+    increase_link_counter(
+        callback.from_user.id,
+        category
+    )
+
+#отправка
+await callback.message.answer(
+        f"""
+🔗 Временная ссылка:
+
+{invite.invite_link}
+
+⏳ Действует {cooldown} минут.
+"""
+    )
+
     await callback.answer()
 
-# ==================== ОБРАБОТКА ВСЕХ ОСТАЛЬНЫХ СООБЩЕНИЙ ====================
-@router.message()
-async def handle_unknown(message: Message):
-    """Обработка неизвестных сообщений"""
-    # Игнорируем, если команда
-    if message.text and message.text.startswith('/'):
-        return
-    
-    await message.answer(
-        "❓ Я не понимаю эту команду.\n\n"
-        "Используйте кнопки меню для навигации."
+#основнойЧат
+@router.callback_query(
+    F.data == "chat_link"
+)
+async def chat_link(
+    callback: CallbackQuery
+):
+    await process_link(
+        callback,
+        "chat"
     )
+
+#канал
+@router.callback_query(
+    F.data == "channel_link"
+)
+async def channel_link(
+    callback: CallbackQuery
+):
+    await process_link(
+        callback,
+        "channel"
+    )
+
+#резерв
+@router.callback_query(
+    F.data == "reserve_link"
+)
+async def reserve_link(
+    callback: CallbackQuery
+):
+    await process_link(
+        callback,
+        "reserve"
+    )
+
+
+
