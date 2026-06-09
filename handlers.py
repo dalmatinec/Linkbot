@@ -1512,8 +1512,7 @@ async def broadcast_confirm(
         "📨 Рассылка началась..."
     )
 
-
-for user in users:
+    for user in users:
 
         user_id = user[0]
 
@@ -1562,7 +1561,6 @@ add_broadcast(
     await state.clear()
 
     await callback.answer()
-
 
 @router.my_chat_member()
 async def bot_block_handler(event):
