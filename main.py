@@ -1,45 +1,132 @@
 import asyncio
-import logging
-from aiogram import Bot, Dispatcher
-from aiogram.types import BotCommand
-from aiogram.client.default import DefaultBotProperties
-from aiogram.enums import ParseMode
+
+from datetime import datetime, timedelta
+
+from aiogram import Bot
+from aiogram import Dispatcher
 
 from config import BOT_TOKEN
+
 from db import init_db
-from middlewares import RegisterMiddleware, LoggingMiddleware, BanCheckMiddleware
-from handlers import router as handlers_router
-from admin import router as admin_router
-from scheduler import daily_report
 
-logging.basicConfig(level=logging.INFO)
+from handlers import router
 
-async def set_commands(bot: Bot):
-    commands = [
-        BotCommand(command="start", description="Запустить бота"),
-        BotCommand(command="admin", description="Админ-панель"),
-        BotCommand(command="link", description="Получить ссылку на бота")
-    ]
-    await bot.set_my_commands(commands)
+from admin import (
+    send_daily_report,
+    create_backup,
+    cleanup_backups,
+    send_backup_log
+)
+
+
+async def scheduler(bot: Bot):
+
+    while True:
+
+        now = datetime.now()
+
+        target = now.replace(
+            hour=9,
+            minute=0,
+            second=0,
+            microsecond=0
+        )
+
+        if now >= target:
+            target += timedelta(days=1)
+
+        sleep_seconds = (
+            target - now
+        ).total_seconds()
+
+        await asyncio.sleep(
+            sleep_seconds
+        )
+
+        try:
+
+            await send_daily_report(
+                bot
+            )
+
+        except Exception as e:
+
+            print(
+                "Daily report error:",
+                e
+            )
+
+        try:
+
+            backup_path = (
+                create_backup()
+            )
+
+            cleanup_backups()
+
+            await send_backup_log(
+                bot,
+                backup_path
+            )
+
+        except Exception as e:
+
+            print(
+                "Backup error:",
+                e
+            )
+
+
+async def on_startup(
+    bot: Bot
+):
+
+    asyncio.create_task(
+        scheduler(bot)
+    )
+
+    print(
+        "Scheduler started"
+    )
+
 
 async def main():
+
     init_db()
-    
-    bot = Bot(token=BOT_TOKEN, default=DefaultBotProperties(parse_mode=ParseMode.HTML))
+
+    bot = Bot(
+        token=BOT_TOKEN
+    )
+
     dp = Dispatcher()
-    
-    dp.update.middleware(RegisterMiddleware())
-    dp.update.middleware(BanCheckMiddleware())
-    dp.update.middleware(LoggingMiddleware(bot))
-    
-    dp.include_router(handlers_router)
-    dp.include_router(admin_router)
-    
-    await set_commands(bot)
-    asyncio.create_task(daily_report(bot))
-    
-    print("🤖 Бот запущен!")
-    await dp.start_polling(bot)
+
+    dp.include_router(
+        router
+    )
+
+    await on_startup(
+        bot
+    )
+
+    print(
+        "Bot started"
+    )
+
+    await dp.start_polling(
+        bot
+    )
+
 
 if __name__ == "__main__":
-    asyncio.run(main())
+
+    try:
+
+        asyncio.run(
+            main()
+        )
+
+    except KeyboardInterrupt:
+
+        print(
+            "Bot stopped"
+        )
