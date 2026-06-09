@@ -62,3 +62,75 @@ async def broadcast_forward(
         "failed": failed,
         "total": success + failed
     }
+
+async def send_to_user(
+    bot,
+    user_id,
+    text
+):
+    try:
+
+        await bot.send_message(
+            user_id,
+            text
+        )
+
+        return True
+
+    except:
+
+        return False
+
+async def send_log(
+    bot,
+    log_channel,
+    text
+):
+    try:
+
+        await bot.send_message(
+            log_channel,
+            text
+        )
+
+    except:
+        pass
+
+def build_broadcast_report(
+    success,
+    failed
+):
+    return f"""
+📨 РАССЫЛКА ЗАВЕРШЕНА
+
+✅ Доставлено:
+{success}
+
+❌ Ошибок:
+{failed}
+
+📊 Всего:
+{success + failed}
+"""
+
+def build_broadcast_log(
+    admin_id,
+    success,
+    failed
+):
+    return f"""
+📨 РАССЫЛКА
+
+👤 Админ:
+{admin_id}
+
+✅ Доставлено:
+{success}
+
+❌ Ошибок:
+{failed}
+
+📊 Всего:
+{success + failed}
+"""
+
