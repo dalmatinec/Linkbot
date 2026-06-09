@@ -1537,7 +1537,7 @@ add_broadcast(
         success,
         failed
     )
-    add_admin_log(
+add_admin_log(
         callback.from_user.id,
         "broadcast",
         f"{success}/{failed}"
