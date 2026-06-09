@@ -1543,7 +1543,7 @@ add_admin_log(
         f"{success}/{failed}"
     )
 
-    await status.edit_text(
+await status.edit_text(
         f"""
 📨 РАССЫЛКА ЗАВЕРШЕНА
 
@@ -1558,9 +1558,9 @@ add_admin_log(
 """
     )
 
-    await state.clear()
+await state.clear()
 
-    await callback.answer()
+await callback.answer()
 
 @router.my_chat_member()
 async def bot_block_handler(event):
@@ -1584,7 +1584,7 @@ async def bot_block_handler(event):
 try:
 
     await message.bot.send_message(
-        LOG_CHANNEL_ID,
+      LOG_CHANNEL_ID,
         f"""
 👤 НОВЫЙ ПОЛЬЗОВАТЕЛЬ
 
