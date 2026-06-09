@@ -1354,3 +1354,43 @@ async def admin_logs(
     )
 
     await callback.answer()
+
+@router.callback_query(
+    F.data == "admin_export"
+)
+async def admin_export(
+    callback: CallbackQuery
+):
+
+    users = export_users()
+
+    file_name = "users_export.csv"
+
+    with open(
+        file_name,
+        "w",
+        newline="",
+        encoding="utf-8"
+    ) as file:
+
+        writer = csv.writer(file)
+
+        writer.writerow(
+            [
+                "user_id",
+                "username",
+                "first_name",
+                "joined_at"
+            ]
+        )
+
+        for user in users:
+            writer.writerow(user)
+
+    from aiogram.types import FSInputFile
+
+    await callback.message.answer_document(
+        FSInputFile(file_name)
+    )
+
+    await callback.answer()
