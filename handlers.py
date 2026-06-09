@@ -1532,18 +1532,19 @@ async def broadcast_confirm(
 
         await asyncio.sleep(delay)
 
-add_broadcast(
+    add_broadcast(
         callback.from_user.id,
         success,
         failed
     )
-add_admin_log(
+
+    add_admin_log(
         callback.from_user.id,
         "broadcast",
         f"{success}/{failed}"
     )
 
-await status.edit_text(
+    await status.edit_text(
         f"""
 📨 РАССЫЛКА ЗАВЕРШЕНА
 
@@ -1558,9 +1559,10 @@ await status.edit_text(
 """
     )
 
-await state.clear()
+    await state.clear()
 
-await callback.answer()
+    await callback.answer()
+
 
 @router.my_chat_member()
 async def bot_block_handler(event):
@@ -1579,23 +1581,3 @@ async def bot_block_handler(event):
     except:
 
         pass
-
-
-try:
-
-    await message.bot.send_message(
-      LOG_CHANNEL_ID,
-        f"""
-👤 НОВЫЙ ПОЛЬЗОВАТЕЛЬ
-
-🆔 {user.id}
-
-👤 {user.first_name}
-
-📎 @{user.username or '-'}
-"""
-    )
-
-except:
-    pass
-
