@@ -1,5 +1,6 @@
 from datetime import datetime, timedelta
 import csv
+import asyncio
 from aiogram import Router, F
 from aiogram.filters import Command
 from aiogram.types import (
@@ -1394,3 +1395,210 @@ async def admin_export(
     )
 
     await callback.answer()
+
+
+@router.callback_query(
+    F.data == "admin_broadcast"
+)
+async def broadcast_start(
+    callback: CallbackQuery,
+    state: FSMContext
+):
+
+    if not is_admin(
+        callback.from_user.id
+    ):
+        return
+
+    await state.set_state(
+        BroadcastStates.waiting_forward
+    )
+
+    await callback.message.answer(
+        "📨 Перешлите сообщение для рассылки.",
+        reply_markup=cancel_menu()
+    )
+
+    await callback.answer()
+
+
+@router.message(
+    BroadcastStates.waiting_forward
+)
+async def broadcast_receive(
+    message: Message,
+    state: FSMContext
+):
+
+    await state.update_data(
+        broadcast_chat=message.chat.id,
+        broadcast_message=message.message_id
+    )
+
+    await state.set_state(
+        BroadcastStates.waiting_confirm
+    )
+
+    await message.answer(
+        "Подтвердить рассылку?",
+        reply_markup=broadcast_confirm_menu()
+    )
+
+
+@router.callback_query(
+    F.data == "broadcast_cancel"
+)
+async def broadcast_cancel(
+    callback: CallbackQuery,
+    state: FSMContext
+):
+
+    await state.clear()
+
+    await callback.message.edit_text(
+        "❌ Рассылка отменена."
+    )
+
+    await callback.answer()
+
+
+@router.callback_query(
+    F.data == "cancel_action"
+)
+async def cancel_action(
+    callback: CallbackQuery,
+    state: FSMContext
+):
+
+    await state.clear()
+
+    await callback.message.edit_text(
+        "❌ Действие отменено."
+    )
+
+    await callback.answer()
+
+
+@router.callback_query(
+    F.data == "broadcast_confirm"
+)
+async def broadcast_confirm(
+    callback: CallbackQuery,
+    state: FSMContext
+):
+
+    data = await state.get_data()
+
+    source_chat = data.get(
+        "broadcast_chat"
+    )
+
+    source_message = data.get(
+        "broadcast_message"
+    )
+
+    users = get_all_users()
+
+    delay = float(
+        get_setting(
+            "broadcast_delay"
+        ) or 0.5
+    )
+
+    success = 0
+    failed = 0
+
+    status = await callback.message.answer(
+        "📨 Рассылка началась..."
+    )
+
+
+for user in users:
+
+        user_id = user[0]
+
+        try:
+
+            await callback.bot.forward_message(
+                chat_id=user_id,
+                from_chat_id=source_chat,
+                message_id=source_message
+            )
+
+            success += 1
+
+        except Exception:
+
+            failed += 1
+
+        await asyncio.sleep(delay)
+
+add_broadcast(
+        callback.from_user.id,
+        success,
+        failed
+    )
+
+    add_admin_log(
+        callback.from_user.id,
+        "broadcast",
+        f"{success}/{failed}"
+    )
+
+    await status.edit_text(
+        f"""
+📨 РАССЫЛКА ЗАВЕРШЕНА
+
+✅ Доставлено:
+{success}
+
+❌ Ошибок:
+{failed}
+
+📊 Всего:
+{success + failed}
+"""
+    )
+
+    await state.clear()
+
+    await callback.answer()
+
+
+@router.my_chat_member()
+async def bot_block_handler(event):
+
+    try:
+
+        if (
+            event.new_chat_member.status
+            == "kicked"
+        ):
+
+            add_user_block(
+                event.from_user.id
+            )
+
+    except:
+
+        pass
+
+
+try:
+
+    await message.bot.send_message(
+        LOG_CHANNEL_ID,
+        f"""
+👤 НОВЫЙ ПОЛЬЗОВАТЕЛЬ
+
+🆔 {user.id}
+
+👤 {user.first_name}
+
+📎 @{user.username or '-'}
+"""
+    )
+
+except:
+    pass
+
