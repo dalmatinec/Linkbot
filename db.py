@@ -2,7 +2,7 @@
 
 import sqlite3
 
-from datetime import datetime
+from datetime import datetime, timedelta
 
 from config import DATABASE_NAME
 
@@ -876,3 +876,155 @@ def get_daily_report():
 
 📊 Всего пользователей: {stats['total_users']}
 """
+
+def create_owner():
+    conn = get_connection()
+    cursor = conn.cursor()
+
+    cursor.execute(
+        """
+        INSERT OR IGNORE INTO admins(
+            user_id,
+            username,
+            role,
+            created_at
+        )
+        VALUES(?,?,?,?)
+        """,
+        (
+            OWNER_ID,
+            "owner",
+            "owner",
+            datetime.now().isoformat()
+        )
+    )
+
+    conn.commit()
+    conn.close()
+
+
+def add_user(user_id, username, first_name):
+    conn = get_connection()
+    cursor = conn.cursor()
+
+    now = datetime.now().isoformat()
+
+    cursor.execute(
+        """
+        INSERT OR IGNORE INTO users(
+            user_id,
+            username,
+            first_name,
+            joined_at,
+            last_activity
+        )
+        VALUES(?,?,?,?,?)
+        """,
+        (
+            user_id,
+            username,
+            first_name,
+            now,
+            now
+        )
+    )
+
+    conn.commit()
+    conn.close()
+
+
+def update_activity(user_id):
+    conn = get_connection()
+    cursor = conn.cursor()
+
+    cursor.execute(
+        """
+        UPDATE users
+        SET last_activity=?
+        WHERE user_id=?
+        """,
+        (
+            datetime.now().isoformat(),
+            user_id
+        )
+    )
+
+    conn.commit()
+    conn.close()
+
+
+def get_user(user_id):
+    conn = get_connection()
+    cursor = conn.cursor()
+
+    cursor.execute(
+        """
+        SELECT *
+        FROM users
+        WHERE user_id=?
+        """,
+        (user_id,)
+    )
+
+    user = cursor.fetchone()
+
+    conn.close()
+
+    return user
+
+
+def is_banned(user_id):
+    conn = get_connection()
+    cursor = conn.cursor()
+
+    cursor.execute(
+        """
+        SELECT banned
+        FROM users
+        WHERE user_id=?
+        """,
+        (user_id,)
+    )
+
+    result = cursor.fetchone()
+
+    conn.close()
+
+    if not result:
+        return False
+
+    return bool(result[0])
+
+
+def ban_user(user_id):
+    conn = get_connection()
+    cursor = conn.cursor()
+
+    cursor.execute(
+        """
+        UPDATE users
+        SET banned=1
+        WHERE user_id=?
+        """,
+        (user_id,)
+    )
+
+    conn.commit()
+    conn.close()
+
+
+def unban_user(user_id):
+    conn = get_connection()
+    cursor = conn.cursor()
+
+    cursor.execute(
+        """
+        UPDATE users
+        SET banned=0
+        WHERE user_id=?
+        """,
+        (user_id,)
+    )
+
+    conn.commit()
+    conn.close()
