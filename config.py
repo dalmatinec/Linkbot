@@ -1,20 +1,13 @@
-# config.py
-
-BOT_TOKEN = "8866817695:AAHfZovjYFeC60RVxbi7uukMrEkTBhdyq3I"
-
+BOT_TOKEN = "сюда токен"
 OWNER_ID = 8243233601
-
-LOG_CHANNEL_ID = -1003922852212
-
-ADMIN_GROUP_ID = -1003555825169
-
-DATABASE_NAME = "database.db"
-
-BACKUP_DIR = "backups"
-
-# Фиксированные ссылки
-SITE_URL = "https://ladyshop.info"
-
-OPERATOR_SIS = "https://t.me/lady_4mmc"
-
-OPERATOR_BRO = "https://t.me/mens_420"
+ADMIN_CHAT_ID = -1003555825169
+SUBSCRIBE_CHANNEL = "@ladyshopinfo"
+WEBSITE_URL = "https://ladyshop.info"
+OPERATOR_ORG = "@mens_429"
+OPERATOR_HIM = "@lady_4mmc"
+LINK_LIFETIME = 15
+LINK_LIFETIMES = [15, 30, 60]
+FLOOD_LIMIT = 5
+FLOOD_SECONDS = 5
+FLOOD_BAN_MINUTES = 5
+DAILY_REPORT_TIME = "09:00"
