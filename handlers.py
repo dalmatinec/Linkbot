@@ -87,13 +87,6 @@ async def cb_link(call: CallbackQuery, bot: Bot):
     btn = call.data
     lifetime = await db.get_link_lifetime()
 
-    active_link = await db.get_active_link(call.from_user.id, btn)
-    if active_link:
-        await call.message.edit_reply_markup(reply_markup=None)
-        await call.message.answer(LINK_MSG(BTN_NAMES[btn], active_link, lifetime), parse_mode="HTML")
-        await call.answer()
-        return
-
     if not await db.can_use_link(call.from_user.id, btn, lifetime):
         seconds = await db.time_until_available(call.from_user.id, btn, lifetime)
         await call.message.edit_reply_markup(reply_markup=None)
