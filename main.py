@@ -1,132 +1,72 @@
 import asyncio
+import logging
+import time
+from datetime import datetime, timezone, timedelta, time as dtime
 
-from datetime import datetime, timedelta
+from aiogram import Bot, Dispatcher
+from aiogram.client.default import DefaultBotProperties
 
-from aiogram import Bot
-from aiogram import Dispatcher
-
-from config import BOT_TOKEN
-
-from db import init_db
-
-from handlers import router
-
-from admin import (
-    send_daily_report,
-    create_backup,
-    cleanup_backups,
-    send_backup_log
-)
+import db
+from config import BOT_TOKEN, ADMIN_CHAT_ID, DAILY_REPORT_TIME
+from text import DAILY_REPORT
+import handlers
+import admin
+import support
+import send
 
 
-async def scheduler(bot: Bot):
-
+async def daily_report(bot: Bot):
+    report_time = dtime.fromisoformat(DAILY_REPORT_TIME)
     while True:
-
-        now = datetime.now()
-
-        target = now.replace(
-            hour=9,
-            minute=0,
-            second=0,
-            microsecond=0
-        )
-
+        now = datetime.now(timezone.utc)
+        target = datetime.combine(now.date(), report_time, tzinfo=timezone.utc)
         if now >= target:
-            target += timedelta(days=1)
-
-        sleep_seconds = (
-            target - now
-        ).total_seconds()
-
-        await asyncio.sleep(
-            sleep_seconds
-        )
-
-        try:
-
-            await send_daily_report(
-                bot
+            target = datetime.combine(
+                now.date() + timedelta(days=1), report_time, tzinfo=timezone.utc
             )
+        wait_seconds = (target - now).total_seconds()
+        await asyncio.sleep(wait_seconds)
 
-        except Exception as e:
+        today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+        stats = await db.get_daily_stats(today)
+        total = await db.get_total_users()
+        banned = await db.get_banned_count()
+        text = DAILY_REPORT(stats) + f"\n\n👥 Всего пользователей: <b>{total}</b>\n🚫 Забанено: <b>{banned}</b>"
+        await bot.send_message(ADMIN_CHAT_ID, text, parse_mode="HTML")
 
-            print(
-                "Daily report error:",
-                e
+
+async def cleanup_flood():
+    while True:
+        await asyncio.sleep(3600)
+        async with __import__("aiosqlite").connect(db.DB_PATH) as conn:
+            await conn.execute(
+                "DELETE FROM flood_control WHERE message_ts < ?",
+                (time.time() - 60,)
             )
-
-        try:
-
-            backup_path = (
-                create_backup()
-            )
-
-            cleanup_backups()
-
-            await send_backup_log(
-                bot,
-                backup_path
-            )
-
-        except Exception as e:
-
-            print(
-                "Backup error:",
-                e
-            )
-
-
-async def on_startup(
-    bot: Bot
-):
-
-    asyncio.create_task(
-        scheduler(bot)
-    )
-
-    print(
-        "Scheduler started"
-    )
+            await conn.commit()
 
 
 async def main():
+    logging.basicConfig(level=logging.INFO)
 
-    init_db()
+    await db.init_db()
 
     bot = Bot(
-        token=BOT_TOKEN
+        token=BOT_TOKEN,
+        default=DefaultBotProperties(parse_mode="HTML")
     )
-
     dp = Dispatcher()
 
-    dp.include_router(
-        router
-    )
+    dp.include_router(handlers.router)
+    dp.include_router(admin.router)
+    dp.include_router(support.router)
+    dp.include_router(send.router)
 
-    await on_startup(
-        bot
-    )
+    asyncio.create_task(daily_report(bot))
+    asyncio.create_task(cleanup_flood())
 
-    print(
-        "Bot started"
-    )
-
-    await dp.start_polling(
-        bot
-    )
+    await dp.start_polling(bot)
 
 
 if __name__ == "__main__":
-
-    try:
-
-        asyncio.run(
-            main()
-        )
-
-    except KeyboardInterrupt:
-
-        print(
-            "Bot stopped"
-        )
+    asyncio.run(main())
