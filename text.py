@@ -77,7 +77,7 @@ def SUPPORT_FORM_USER(uid: int, username: str, name: str, text: str) -> str:
 def SUPPORT_FORM_REPLY(admin_name: str, text: str) -> str:
     return (
         f"📬 <b>Ответ от поддержки</b>\n\n"
-        f"👩‍💼 Оператор: {admin_name}\n\n"
+        f"👩‍💼 Саппорт: {admin_name}\n\n"
         f"💬 {text}"
     )
 
