@@ -1,155 +1,185 @@
-from datetime import datetime
-import shutil
-import os
+from aiogram import Router, F
+from aiogram.filters import Command
+from aiogram.types import Message, CallbackQuery
+from aiogram.fsm.context import FSMContext
+from aiogram.fsm.state import State, StatesGroup
+from datetime import datetime, timezone
 
-from config import (
-    DATABASE_NAME,
-    BACKUP_DIR,
-    LOG_CHANNEL_ID
-)
+import db
+from config import OWNER_ID
+from keyboards import admin_menu, links_menu, timer_menu, user_action_menu
+from text import DAILY_REPORT
 
-from db import (
-    get_full_statistics,
-    get_daily_report,
-    get_admin_logs
-)
+router = Router()
 
-def build_stats_text():
 
-    stats = get_full_statistics()
+class AdminState(StatesGroup):
+    waiting_link = State()
+    waiting_user_id = State()
 
-    return f"""
-📊 СТАТИСТИКА БОТА
 
-👥 Пользователи:
-• Всего: {stats['total_users']}
-• Сегодня: {stats['new_today']}
-• За неделю: {stats['new_week']}
-• За месяц: {stats['new_month']}
+async def is_admin(user_id: int) -> bool:
+    admins = await db.get_admins()
+    return user_id in admins or user_id == OWNER_ID
 
-📈 Активность:
-• Активных сегодня: {stats['active_today']}
 
-🔗 Ссылки:
-• Всего: {stats['total_links']}
-• Чат: {stats['chat_links']}
-• Канал: {stats['channel_links']}
-• Резерв: {stats['reserve_links']}
+@router.message(Command("admin"))
+async def cmd_admin(message: Message):
+    if not await is_admin(message.from_user.id):
+        await message.answer("⛔ У вас нет доступа к этой команде.")
+        return
+    await message.answer("👑 <b>Панель администратора</b>", reply_markup=admin_menu(), parse_mode="HTML")
 
-🚫 Ограничения:
-• Забанено: {stats['banned']}
-• Заблокировали бота: {stats['blocked']}
 
-👨‍💼 Администраторы:
-• Всего: {stats['admins']}
-"""
+@router.callback_query(F.data == "admin_links")
+async def cb_admin_links(call: CallbackQuery):
+    if not await is_admin(call.from_user.id):
+        await call.answer("⛔ Нет доступа", show_alert=True)
+        return
+    await call.message.edit_text("🔗 <b>Управление ссылками</b>\n\nВыберите ссылку для редактирования:",
+                                  reply_markup=links_menu(), parse_mode="HTML")
+    await call.answer()
 
-def build_logs_text():
 
-    logs = get_admin_logs()
+@router.callback_query(F.data.in_({"edit_chat", "edit_channel", "edit_reserve"}))
+async def cb_edit_link(call: CallbackQuery, state: FSMContext):
+    if not await is_admin(call.from_user.id):
+        await call.answer("⛔ Нет доступа", show_alert=True)
+        return
+    btn = call.data.replace("edit_", "")
+    await state.set_state(AdminState.waiting_link)
+    await state.update_data(edit_btn=btn)
+    await call.message.answer(f"✏️ Отправьте новую ссылку для <b>{btn}</b>:", parse_mode="HTML")
+    await call.answer()
 
-    if not logs:
-        return "Логи отсутствуют."
 
-    text = "📋 ПОСЛЕДНИЕ ДЕЙСТВИЯ\n\n"
+@router.message(AdminState.waiting_link)
+async def process_new_link(message: Message, state: FSMContext):
+    data = await state.get_data()
+    btn = data.get("edit_btn")
+    await db.update_link(btn, message.text.strip())
+    await state.clear()
+    await message.answer(f"✅ Ссылка для <b>{btn}</b> обновлена.", parse_mode="HTML")
 
-    for log in logs[:30]:
 
-        text += (
-            f"👤 {log[1]}\n"
-            f"⚙️ {log[2]}\n"
-            f"🎯 {log[3]}\n"
-            f"🕒 {log[4]}\n\n"
-        )
+@router.callback_query(F.data == "admin_timer")
+async def cb_admin_timer(call: CallbackQuery):
+    if not await is_admin(call.from_user.id):
+        await call.answer("⛔ Нет доступа", show_alert=True)
+        return
+    lifetime = await db.get_link_lifetime()
+    await call.message.edit_text(f"⏱ <b>Таймер ссылок</b>\n\nТекущее значение: <b>{lifetime} мин</b>\n\nВыберите новое:",
+                                  reply_markup=timer_menu(), parse_mode="HTML")
+    await call.answer()
 
-    return text[:4000]
 
-def create_backup():
+@router.callback_query(F.data.in_({"timer_15", "timer_30", "timer_60"}))
+async def cb_set_timer(call: CallbackQuery):
+    if not await is_admin(call.from_user.id):
+        await call.answer("⛔ Нет доступа", show_alert=True)
+        return
+    minutes = int(call.data.split("_")[1])
+    await db.set_link_lifetime(minutes)
+    await call.message.edit_text(f"✅ Таймер установлен: <b>{minutes} мин</b>", reply_markup=timer_menu(), parse_mode="HTML")
+    await call.answer()
 
-    os.makedirs(
-        BACKUP_DIR,
-        exist_ok=True
+
+@router.callback_query(F.data == "admin_users")
+async def cb_admin_users(call: CallbackQuery, state: FSMContext):
+    if not await is_admin(call.from_user.id):
+        await call.answer("⛔ Нет доступа", show_alert=True)
+        return
+    await state.set_state(AdminState.waiting_user_id)
+    await call.message.answer("👤 Введите <b>user_id</b> пользователя:", parse_mode="HTML")
+    await call.answer()
+
+
+@router.message(AdminState.waiting_user_id)
+async def process_user_id(message: Message, state: FSMContext):
+    if not message.text.strip().isdigit():
+        await message.answer("⚠️ Введите корректный числовой user_id.")
+        return
+    user_id = int(message.text.strip())
+    await state.clear()
+    await message.answer(
+        f"👤 Действия над пользователем <code>{user_id}</code>:",
+        reply_markup=user_action_menu(user_id),
+        parse_mode="HTML"
     )
 
-    filename = (
-        datetime.now().strftime(
-            "database_%d-%m-%Y.db"
-        )
-    )
 
-    backup_path = os.path.join(
-        BACKUP_DIR,
-        filename
-    )
+@router.callback_query(F.data.startswith("ban_user:"))
+async def cb_ban_user(call: CallbackQuery):
+    if not await is_admin(call.from_user.id):
+        await call.answer("⛔ Нет доступа", show_alert=True)
+        return
+    user_id = int(call.data.split(":")[1])
+    await db.ban_user(user_id)
+    await call.answer(f"🚫 Пользователь {user_id} заблокирован.", show_alert=True)
 
-    shutil.copy(
-        DATABASE_NAME,
-        backup_path
-    )
 
-    return backup_path
+@router.callback_query(F.data.startswith("unban_user:"))
+async def cb_unban_user(call: CallbackQuery):
+    if not await is_admin(call.from_user.id):
+        await call.answer("⛔ Нет доступа", show_alert=True)
+        return
+    user_id = int(call.data.split(":")[1])
+    await db.unban_user(user_id)
+    await call.answer(f"✅ Пользователь {user_id} разблокирован.", show_alert=True)
 
-def cleanup_backups():
 
-    files = []
+@router.callback_query(F.data.startswith("make_admin:"))
+async def cb_make_admin(call: CallbackQuery):
+    if not await is_admin(call.from_user.id):
+        await call.answer("⛔ Нет доступа", show_alert=True)
+        return
+    user_id = int(call.data.split(":")[1])
+    await db.add_admin(user_id)
+    await call.answer(f"👑 Пользователь {user_id} назначен админом.", show_alert=True)
 
-    for file in os.listdir(
-        BACKUP_DIR
-    ):
 
-        if file.endswith(".db"):
+@router.callback_query(F.data.startswith("remove_admin:"))
+async def cb_remove_admin(call: CallbackQuery):
+    if not await is_admin(call.from_user.id):
+        await call.answer("⛔ Нет доступа", show_alert=True)
+        return
+    user_id = int(call.data.split(":")[1])
+    await db.remove_admin(user_id)
+    await call.answer(f"❌ Пользователь {user_id} снят с должности админа.", show_alert=True)
 
-            files.append(
-                os.path.join(
-                    BACKUP_DIR,
-                    file
-                )
-            )
 
-    files.sort(
-        key=os.path.getmtime,
-        reverse=True
-    )
+@router.callback_query(F.data == "admin_stats")
+async def cb_admin_stats(call: CallbackQuery):
+    if not await is_admin(call.from_user.id):
+        await call.answer("⛔ Нет доступа", show_alert=True)
+        return
+    today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+    stats = await db.get_daily_stats(today)
+    total = await db.get_total_users()
+    banned = await db.get_banned_count()
+    text = DAILY_REPORT(stats) + f"\n\n👥 Всего пользователей: <b>{total}</b>\n🚫 Забанено: <b>{banned}</b>"
+    await call.message.answer(text, parse_mode="HTML")
+    await call.answer()
 
-    for file in files[7:]:
 
-        try:
-            os.remove(file)
-        except:
-            pass
+@router.callback_query(F.data == "admin_admins")
+async def cb_admin_admins(call: CallbackQuery):
+    if not await is_admin(call.from_user.id):
+        await call.answer("⛔ Нет доступа", show_alert=True)
+        return
+    admins = await db.get_admins()
+    if not admins:
+        await call.answer("Список админов пуст.", show_alert=True)
+        return
+    lines = "\n".join(f"• <code>{uid}</code>" for uid in admins)
+    await call.message.answer(f"👑 <b>Список админов:</b>\n\n{lines}", parse_mode="HTML")
+    await call.answer()
 
-async def send_daily_report(
-    bot
-):
 
-    report = get_daily_report()
-
-    try:
-
-        await bot.send_message(
-            LOG_CHANNEL_ID,
-            report
-        )
-
-    except:
-        pass
-
-async def send_backup_log(
-    bot,
-    backup_path
-):
-
-    try:
-
-        await bot.send_message(
-            LOG_CHANNEL_ID,
-            f"""
-💾 СОЗДАН БЭКАП
-
-📁 Файл:
-{backup_path}
-"""
-        )
-
-    except:
-        pass
+@router.callback_query(F.data == "back_admin")
+async def cb_back_admin(call: CallbackQuery):
+    if not await is_admin(call.from_user.id):
+        await call.answer("⛔ Нет доступа", show_alert=True)
+        return
+    await call.message.edit_text("👑 <b>Панель администратора</b>", reply_markup=admin_menu(), parse_mode="HTML")
+    await call.answer()
