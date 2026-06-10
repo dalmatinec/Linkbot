@@ -128,6 +128,5 @@ def support_action_menu(user_id: int, msg_id: int) -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(inline_keyboard=[
         [
             InlineKeyboardButton(text="🚫 Бан", callback_data=f"ban_from_support:{user_id}"),
-            InlineKeyboardButton(text="✅ Ответить", callback_data=f"reply_support:{msg_id}"),
         ],
     ])
