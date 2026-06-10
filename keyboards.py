@@ -38,7 +38,6 @@ def support_menu() -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(inline_keyboard=[
         [
             InlineKeyboardButton(text="💬 Связаться", callback_data="contact_support"),
-            InlineKeyboardButton(text="📜 Правила", callback_data="rules"),
         ],
         [
             InlineKeyboardButton(text="↩️ Назад", callback_data="back_main"),
