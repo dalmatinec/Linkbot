@@ -51,11 +51,12 @@ def admin_menu() -> InlineKeyboardMarkup:
         [
             InlineKeyboardButton(text="🔗 Ссылки", callback_data="admin_links"),
             InlineKeyboardButton(text="⏱ Таймер", callback_data="admin_timer"),
-            InlineKeyboardButton(text="👥 Пользователи", callback_data="admin_users"),
         ],
         [
             InlineKeyboardButton(text="📊 Статистика", callback_data="admin_stats"),
             InlineKeyboardButton(text="📨 Рассылка", callback_data="admin_broadcast"),
+        ],
+        [
             InlineKeyboardButton(text="👑 Админы", callback_data="admin_admins"),
         ],
     ])
@@ -108,25 +109,22 @@ def confirm_menu() -> InlineKeyboardMarkup:
     ])
 
 
-def user_action_menu(user_id: int) -> InlineKeyboardMarkup:
-    return InlineKeyboardMarkup(inline_keyboard=[
-        [
-            InlineKeyboardButton(text="🚫 Бан", callback_data=f"ban_user:{user_id}"),
-            InlineKeyboardButton(text="✅ Разбан", callback_data=f"unban_user:{user_id}"),
-        ],
-        [
-            InlineKeyboardButton(text="👑 Админ", callback_data=f"make_admin:{user_id}"),
-            InlineKeyboardButton(text="❌ Снять", callback_data=f"remove_admin:{user_id}"),
-        ],
-        [
-            InlineKeyboardButton(text="↩️ Назад", callback_data="back_admin"),
-        ],
-    ])
-
-
 def support_action_menu(user_id: int, msg_id: int) -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(inline_keyboard=[
         [
             InlineKeyboardButton(text="🚫 Бан", callback_data=f"ban_from_support:{user_id}"),
+        ],
+    ])
+
+
+def admin_admins_menu() -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup(inline_keyboard=[
+        [
+            InlineKeyboardButton(text="➕ Добавить админа", callback_data="add_admin"),
+            InlineKeyboardButton(text="➖ Удалить админа", callback_data="del_admin"),
+        ],
+        [
+            InlineKeyboardButton(text="📋 Список админов", callback_data="list_admins"),
+            InlineKeyboardButton(text="↩️ Назад", callback_data="back_admin"),
         ],
     ])
