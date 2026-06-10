@@ -7,7 +7,7 @@ from datetime import datetime, timezone
 
 import db
 from config import OWNER_ID
-from keyboards import admin_menu, links_menu, timer_menu, user_action_menu
+from keyboards import admin_menu, links_menu, timer_menu, admin_admins_menu
 from text import DAILY_REPORT
 
 router = Router()
@@ -15,7 +15,8 @@ router = Router()
 
 class AdminState(StatesGroup):
     waiting_link = State()
-    waiting_user_id = State()
+    waiting_add_admin = State()
+    waiting_del_admin = State()
 
 
 async def is_admin(user_id: int) -> bool:
@@ -31,13 +32,28 @@ async def cmd_admin(message: Message):
     await message.answer("👑 <b>Панель администратора</b>", reply_markup=admin_menu(), parse_mode="HTML")
 
 
+@router.message(Command("help"))
+async def cmd_help(message: Message):
+    if not await is_admin(message.from_user.id):
+        return
+    await message.answer(
+        "👑 <b>Команды админа:</b>\n"
+        "/admin — панель управления\n"
+        "/broadcast — рассылка\n"
+        "/help — помощь",
+        parse_mode="HTML"
+    )
+
+
 @router.callback_query(F.data == "admin_links")
 async def cb_admin_links(call: CallbackQuery):
     if not await is_admin(call.from_user.id):
         await call.answer("⛔ Нет доступа", show_alert=True)
         return
-    await call.message.edit_text("🔗 <b>Управление ссылками</b>\n\nВыберите ссылку для редактирования:",
-                                  reply_markup=links_menu(), parse_mode="HTML")
+    await call.message.edit_text(
+        "🔗 <b>Управление ссылками</b>\n\nВыберите чат для редактирования:",
+        reply_markup=links_menu(), parse_mode="HTML"
+    )
     await call.answer()
 
 
@@ -49,17 +65,21 @@ async def cb_edit_link(call: CallbackQuery, state: FSMContext):
     btn = call.data.replace("edit_", "")
     await state.set_state(AdminState.waiting_link)
     await state.update_data(edit_btn=btn)
-    await call.message.answer(f"✏️ Отправьте новую ссылку для <b>{btn}</b>:", parse_mode="HTML")
+    await call.message.answer(f"✏️ Отправьте ID чата для <b>{btn}</b>:\n\nПример: <code>-1001234567890</code>", parse_mode="HTML")
     await call.answer()
 
 
 @router.message(AdminState.waiting_link)
 async def process_new_link(message: Message, state: FSMContext):
+    text = message.text.strip()
+    if not text.lstrip("-").isdigit():
+        await message.answer("⚠️ Введите корректный числовой ID чата. Пример: <code>-1001234567890</code>", parse_mode="HTML")
+        return
     data = await state.get_data()
     btn = data.get("edit_btn")
-    await db.update_link(btn, message.text.strip())
+    await db.update_link(btn, int(text))
     await state.clear()
-    await message.answer(f"✅ Ссылка для <b>{btn}</b> обновлена.", parse_mode="HTML")
+    await message.answer(f"✅ ID чата для <b>{btn}</b> обновлён: <code>{text}</code>", parse_mode="HTML")
 
 
 @router.callback_query(F.data == "admin_timer")
@@ -68,8 +88,10 @@ async def cb_admin_timer(call: CallbackQuery):
         await call.answer("⛔ Нет доступа", show_alert=True)
         return
     lifetime = await db.get_link_lifetime()
-    await call.message.edit_text(f"⏱ <b>Таймер ссылок</b>\n\nТекущее значение: <b>{lifetime} мин</b>\n\nВыберите новое:",
-                                  reply_markup=timer_menu(), parse_mode="HTML")
+    await call.message.edit_text(
+        f"⏱ <b>Таймер ссылок</b>\n\nТекущее значение: <b>{lifetime} мин</b>\n\nВыберите новое:",
+        reply_markup=timer_menu(), parse_mode="HTML"
+    )
     await call.answer()
 
 
@@ -80,72 +102,11 @@ async def cb_set_timer(call: CallbackQuery):
         return
     minutes = int(call.data.split("_")[1])
     await db.set_link_lifetime(minutes)
-    await call.message.edit_text(f"✅ Таймер установлен: <b>{minutes} мин</b>", reply_markup=timer_menu(), parse_mode="HTML")
-    await call.answer()
-
-
-@router.callback_query(F.data == "admin_users")
-async def cb_admin_users(call: CallbackQuery, state: FSMContext):
-    if not await is_admin(call.from_user.id):
-        await call.answer("⛔ Нет доступа", show_alert=True)
-        return
-    await state.set_state(AdminState.waiting_user_id)
-    await call.message.answer("👤 Введите <b>user_id</b> пользователя:", parse_mode="HTML")
-    await call.answer()
-
-
-@router.message(AdminState.waiting_user_id)
-async def process_user_id(message: Message, state: FSMContext):
-    if not message.text.strip().isdigit():
-        await message.answer("⚠️ Введите корректный числовой user_id.")
-        return
-    user_id = int(message.text.strip())
-    await state.clear()
-    await message.answer(
-        f"👤 Действия над пользователем <code>{user_id}</code>:",
-        reply_markup=user_action_menu(user_id),
-        parse_mode="HTML"
+    await call.message.edit_text(
+        f"✅ Таймер установлен: <b>{minutes} мин</b>",
+        reply_markup=timer_menu(), parse_mode="HTML"
     )
-
-
-@router.callback_query(F.data.startswith("ban_user:"))
-async def cb_ban_user(call: CallbackQuery):
-    if not await is_admin(call.from_user.id):
-        await call.answer("⛔ Нет доступа", show_alert=True)
-        return
-    user_id = int(call.data.split(":")[1])
-    await db.ban_user(user_id)
-    await call.answer(f"🚫 Пользователь {user_id} заблокирован.", show_alert=True)
-
-
-@router.callback_query(F.data.startswith("unban_user:"))
-async def cb_unban_user(call: CallbackQuery):
-    if not await is_admin(call.from_user.id):
-        await call.answer("⛔ Нет доступа", show_alert=True)
-        return
-    user_id = int(call.data.split(":")[1])
-    await db.unban_user(user_id)
-    await call.answer(f"✅ Пользователь {user_id} разблокирован.", show_alert=True)
-
-
-@router.callback_query(F.data.startswith("make_admin:"))
-async def cb_make_admin(call: CallbackQuery):
-    if not await is_admin(call.from_user.id):
-        await call.answer("⛔ Нет доступа", show_alert=True)
-        return
-    user_id = int(call.data.split(":")[1])
-    await db.add_admin(user_id)
-    await call.answer(f"👑 Пользователь {user_id} назначен админом.", show_alert=True)
-
-
-@router.callback_query(F.data.startswith("remove_admin:"))
-async def cb_remove_admin(call: CallbackQuery):
-    if not await is_admin(call.from_user.id):
-        await call.answer("⛔ Нет доступа", show_alert=True)
-        return
-    user_id = int(call.data.split(":")[1])
-    await db.remove_admin(user_id)
-    await call.answer(f"❌ Пользователь {user_id} снят с должности админа.", show_alert=True)
+    await call.answer()
 
 
 @router.callback_query(F.data == "admin_stats")
@@ -167,6 +128,60 @@ async def cb_admin_admins(call: CallbackQuery):
     if not await is_admin(call.from_user.id):
         await call.answer("⛔ Нет доступа", show_alert=True)
         return
+    await call.message.edit_text(
+        "👑 <b>Управление админами</b>",
+        reply_markup=admin_admins_menu(), parse_mode="HTML"
+    )
+    await call.answer()
+
+
+@router.callback_query(F.data == "add_admin")
+async def cb_add_admin(call: CallbackQuery, state: FSMContext):
+    if not await is_admin(call.from_user.id):
+        await call.answer("⛔ Нет доступа", show_alert=True)
+        return
+    await state.set_state(AdminState.waiting_add_admin)
+    await call.message.answer("➕ Введите <b>user_id</b> нового админа:", parse_mode="HTML")
+    await call.answer()
+
+
+@router.message(AdminState.waiting_add_admin)
+async def process_add_admin(message: Message, state: FSMContext):
+    if not message.text.strip().isdigit():
+        await message.answer("⚠️ Введите корректный числовой user_id.")
+        return
+    user_id = int(message.text.strip())
+    await db.add_admin(user_id)
+    await state.clear()
+    await message.answer(f"✅ Пользователь <code>{user_id}</code> назначен админом.", parse_mode="HTML")
+
+
+@router.callback_query(F.data == "del_admin")
+async def cb_del_admin(call: CallbackQuery, state: FSMContext):
+    if not await is_admin(call.from_user.id):
+        await call.answer("⛔ Нет доступа", show_alert=True)
+        return
+    await state.set_state(AdminState.waiting_del_admin)
+    await call.message.answer("➖ Введите <b>user_id</b> админа для удаления:", parse_mode="HTML")
+    await call.answer()
+
+
+@router.message(AdminState.waiting_del_admin)
+async def process_del_admin(message: Message, state: FSMContext):
+    if not message.text.strip().isdigit():
+        await message.answer("⚠️ Введите корректный числовой user_id.")
+        return
+    user_id = int(message.text.strip())
+    await db.remove_admin(user_id)
+    await state.clear()
+    await message.answer(f"❌ Пользователь <code>{user_id}</code> снят с должности админа.", parse_mode="HTML")
+
+
+@router.callback_query(F.data == "list_admins")
+async def cb_list_admins(call: CallbackQuery):
+    if not await is_admin(call.from_user.id):
+        await call.answer("⛔ Нет доступа", show_alert=True)
+        return
     admins = await db.get_admins()
     if not admins:
         await call.answer("Список админов пуст.", show_alert=True)
@@ -181,5 +196,8 @@ async def cb_back_admin(call: CallbackQuery):
     if not await is_admin(call.from_user.id):
         await call.answer("⛔ Нет доступа", show_alert=True)
         return
-    await call.message.edit_text("👑 <b>Панель администратора</b>", reply_markup=admin_menu(), parse_mode="HTML")
+    await call.message.edit_text(
+        "👑 <b>Панель администратора</b>",
+        reply_markup=admin_menu(), parse_mode="HTML"
+    )
     await call.answer()
