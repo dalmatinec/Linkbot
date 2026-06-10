@@ -1,5 +1,6 @@
 from aiogram import Router, F, Bot
-from aiogram.filters import Command, ChatType
+from aiogram.filters import Command
+from aiogram.enums import ChatType
 from aiogram.types import Message, CallbackQuery, FSInputFile, InlineKeyboardMarkup, InlineKeyboardButton
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
