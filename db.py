@@ -2,17 +2,19 @@ import aiosqlite
 import time
 from datetime import datetime, timedelta, timezone
 
+from aiogram import Bot
+
 DB_PATH = "ladyshop.db"
 
 async def init_db():
     async with aiosqlite.connect(DB_PATH) as db:
         await db.executescript("""
             CREATE TABLE IF NOT EXISTS links (
-                btn TEXT PRIMARY KEY, url TEXT NOT NULL
+                btn TEXT PRIMARY KEY, chat_id BIGINT
             );
             CREATE TABLE IF NOT EXISTS used_links (
-                user_id BIGINT, btn TEXT, used_at TIMESTAMP,
-                PRIMARY KEY(user_id, btn)
+                user_id BIGINT, btn TEXT, invite_link TEXT, expires_at TIMESTAMP,
+                used_at TIMESTAMP, PRIMARY KEY(user_id, btn)
             );
             CREATE TABLE IF NOT EXISTS users (
                 user_id BIGINT PRIMARY KEY, username TEXT, first_name TEXT,
@@ -35,28 +37,56 @@ async def init_db():
                 key TEXT PRIMARY KEY, value TEXT
             );
             INSERT OR IGNORE INTO settings VALUES ('link_lifetime', '15');
-            INSERT OR IGNORE INTO links VALUES ('chat', '');
-            INSERT OR IGNORE INTO links VALUES ('channel', '');
-            INSERT OR IGNORE INTO links VALUES ('reserve', '');
         """)
         await db.commit()
 
-async def get_link(btn: str) -> str:
+async def get_chat_id(btn: str) -> int | None:
     async with aiosqlite.connect(DB_PATH) as db:
-        async with db.execute("SELECT url FROM links WHERE btn = ?", (btn,)) as cur:
+        async with db.execute("SELECT chat_id FROM links WHERE btn = ?", (btn,)) as cur:
             row = await cur.fetchone()
-            return row[0] if row else ""
+            return row[0] if row else None
 
-async def update_link(btn: str, new_url: str):
-    async with aiosqlite.connect(DB_PATH) as db:
-        await db.execute("UPDATE links SET url = ? WHERE btn = ?", (new_url, btn))
-        await db.commit()
-
-async def record_link_usage(user_id: int, btn: str):
+async def update_link(btn: str, chat_id: int):
     async with aiosqlite.connect(DB_PATH) as db:
         await db.execute(
-            "INSERT OR REPLACE INTO used_links VALUES (?, ?, ?)",
-            (user_id, btn, datetime.now(timezone.utc).isoformat())
+            "INSERT OR REPLACE INTO links (btn, chat_id) VALUES (?, ?)",
+            (btn, chat_id)
+        )
+        await db.commit()
+
+async def create_invite_link(bot: Bot, btn: str):
+    lifetime = await get_link_lifetime()
+    chat_id = await get_chat_id(btn)
+    if not chat_id:
+        return None, None
+    expires_at = datetime.now(timezone.utc) + timedelta(minutes=lifetime)
+    link = await bot.create_chat_invite_link(
+        chat_id=chat_id,
+        member_limit=1,
+        expire_date=expires_at
+    )
+    return link.invite_link, expires_at
+
+async def get_active_link(user_id: int, btn: str) -> str | None:
+    async with aiosqlite.connect(DB_PATH) as db:
+        async with db.execute(
+            "SELECT invite_link, expires_at FROM used_links WHERE user_id = ? AND btn = ?",
+            (user_id, btn)
+        ) as cur:
+            row = await cur.fetchone()
+            if not row:
+                return None
+            invite_link, expires_at_str = row
+            expires_at = datetime.fromisoformat(expires_at_str)
+            if datetime.now(timezone.utc) < expires_at:
+                return invite_link
+            return None
+
+async def record_link_usage(user_id: int, btn: str, invite_link: str, expires_at: datetime):
+    async with aiosqlite.connect(DB_PATH) as db:
+        await db.execute(
+            "INSERT OR REPLACE INTO used_links (user_id, btn, invite_link, expires_at, used_at) VALUES (?, ?, ?, ?, ?)",
+            (user_id, btn, invite_link, expires_at.isoformat(), datetime.now(timezone.utc).isoformat())
         )
         await db.commit()
 
