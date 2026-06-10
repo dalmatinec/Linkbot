@@ -14,7 +14,6 @@ router = Router()
 
 
 class BroadcastState(StatesGroup):
-    waiting_message = State()
     waiting_confirm = State()
 
 
@@ -23,18 +22,17 @@ async def cmd_broadcast(message: Message, state: FSMContext):
     if not await is_admin(message.from_user.id):
         await message.answer("⛔ У вас нет доступа к этой команде.")
         return
-    await state.set_state(BroadcastState.waiting_message)
+    await state.set_state(BroadcastState.waiting_confirm)
     await message.answer("📨 Перешлите сообщение для рассылки:")
 
 
-@router.message(BroadcastState.waiting_message)
-async def process_broadcast_message(message: Message, state: FSMContext):
+@router.message(BroadcastState.waiting_confirm, F.forward_from | F.forward_from_chat | F.forward_date)
+async def process_forwarded(message: Message, state: FSMContext):
     count = await db.get_total_users()
     await state.update_data(
         from_chat_id=message.chat.id,
         message_id=message.message_id
     )
-    await state.set_state(BroadcastState.waiting_confirm)
     await message.answer(BROADCAST_CONFIRM(count), reply_markup=confirm_menu(), parse_mode="HTML")
 
 
@@ -47,14 +45,18 @@ async def cb_confirm_send(call: CallbackQuery, state: FSMContext, bot: Bot):
     data = await state.get_data()
     from_chat_id = data.get("from_chat_id")
     message_id = data.get("message_id")
+
+    if not from_chat_id or not message_id:
+        await call.answer("⚠️ Нет сообщения для рассылки.", show_alert=True)
+        return
+
     await state.clear()
+    await call.message.edit_reply_markup(reply_markup=None)
+    await call.message.answer("⏳ Рассылка начата...")
 
     user_ids = await db.get_all_user_ids()
     success = 0
     failed = 0
-
-    await call.message.edit_reply_markup(reply_markup=None)
-    await call.message.answer("⏳ Рассылка начата...")
 
     for user_id in user_ids:
         try:
