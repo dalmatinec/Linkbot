@@ -110,6 +110,12 @@ async def is_banned(user_id: int) -> bool:
             row = await cur.fetchone()
             return bool(row[0]) if row else False
 
+async def user_exists(user_id: int) -> bool:
+    async with aiosqlite.connect(DB_PATH) as db:
+        async with db.execute("SELECT 1 FROM users WHERE user_id = ?", (user_id,)) as cur:
+            row = await cur.fetchone()
+            return row is not None
+
 async def add_admin(user_id: int):
     async with aiosqlite.connect(DB_PATH) as db:
         await db.execute("UPDATE users SET is_admin = 1 WHERE user_id = ?", (user_id,))
