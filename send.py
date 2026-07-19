@@ -1,85 +1,92 @@
-from aiogram import Router, F, Bot
-from aiogram.filters import Command
-from aiogram.types import Message, CallbackQuery
-from aiogram.fsm.context import FSMContext
-from aiogram.fsm.state import State, StatesGroup
-import asyncio
+# send.py
+import logging
+from aiogram.types import Message
 
-import db
-from admin import is_admin
-from text import BROADCAST_CONFIRM, BROADCAST_DONE
-from keyboards import confirm_menu
+from database import get_database
 
-router = Router()
+logger = logging.getLogger(name)
+db = get_database()
 
 
-class BroadcastState(StatesGroup):
-    waiting_confirm = State()
-
-
-@router.message(Command("broadcast"))
-async def cmd_broadcast(message: Message, state: FSMContext):
-    if not await is_admin(message.from_user.id):
-        await message.answer("⛔ У вас нет доступа к этой команде.")
-        return
-    await state.set_state(BroadcastState.waiting_confirm)
-    await message.answer("📨 Перешлите сообщение для рассылки:")
-
-
-@router.message(BroadcastState.waiting_confirm, F.forward_from | F.forward_from_chat | F.forward_date)
-async def process_forwarded(message: Message, state: FSMContext):
-    count = await db.get_total_users()
-    await state.update_data(
-        from_chat_id=message.chat.id,
-        message_id=message.message_id
-    )
-    await message.answer(BROADCAST_CONFIRM(count), reply_markup=confirm_menu(), parse_mode="HTML")
-
-
-@router.callback_query(F.data == "confirm_send")
-async def cb_confirm_send(call: CallbackQuery, state: FSMContext, bot: Bot):
-    if not await is_admin(call.from_user.id):
-        await call.answer("⛔ Нет доступа", show_alert=True)
-        return
-
-    data = await state.get_data()
-    from_chat_id = data.get("from_chat_id")
-    message_id = data.get("message_id")
-
-    if not from_chat_id or not message_id:
-        await call.answer("⚠️ Нет сообщения для рассылки.", show_alert=True)
-        return
-
-    await state.clear()
-    await call.message.edit_reply_markup(reply_markup=None)
-    await call.message.answer("⏳ Рассылка начата...")
-
-    user_ids = await db.get_all_user_ids()
+async def send_mailing(message: Message, chat_id: int, message_id: int) -> str:
+    """
+    Отправить сообщение всем пользователям (send)
+    """
+    users = db.get_all_users()
+    total = len(users)
     success = 0
-    failed = 0
-
-    for user_id in user_ids:
+    blocked = 0
+    errors = 0
+    
+    if total == 0:
+        return "❌ Нет активных пользователей для рассылки."
+    
+    for user in users:
+        user_id = user["user_id"]
         try:
-            await bot.forward_message(
+            await message.bot.copy_message(
                 chat_id=user_id,
-                from_chat_id=from_chat_id,
+                from_chat_id=chat_id,
                 message_id=message_id
             )
             success += 1
-        except Exception:
-            failed += 1
-        await asyncio.sleep(0.5)
+        except Exception as e:
+            error_text = str(e)
+            if "bot was blocked by the user" in error_text or "user is deactivated" in error_text:
+                db.update_user_blocked(user_id, 1)
+                blocked += 1
+            else:
+                errors += 1
+                logger.error(f"Ошибка при отправке пользователю {user_id}: {error_text}")
+    
+    report = (
+        f"✅ Рассылка завершена\n\n"
+        f"👥 Всего пользователей: {total}\n\n"
+        f"✅ Успешно: {success}\n"
+        f"🚫 Заблокировали бота: {blocked}\n"
+        f"❌ Другие ошибки: {errors}"
+    )
+    
+    return report
 
-    await call.message.answer(BROADCAST_DONE(success, failed), parse_mode="HTML")
-    await call.answer()
 
-
-@router.callback_query(F.data == "cancel_send")
-async def cb_cancel_send(call: CallbackQuery, state: FSMContext):
-    if not await is_admin(call.from_user.id):
-        await call.answer("⛔ Нет доступа", show_alert=True)
-        return
-    await state.clear()
-    await call.message.edit_reply_markup(reply_markup=None)
-    await call.message.answer("❌ Рассылка отменена.")
-    await call.answer()
+async def forward_mailing(message: Message, chat_id: int, message_id: int) -> str:
+    """
+    Переслать сообщение всем пользователям (forward)
+    """
+    users = db.get_all_users()
+    total = len(users)
+    success = 0
+    blocked = 0
+    errors = 0
+    
+    if total == 0:
+        return "❌ Нет активных пользователей для рассылки."
+    
+    for user in users:
+        user_id = user["user_id"]
+        try:
+            await message.bot.forward_message(
+                chat_id=user_id,
+                from_chat_id=chat_id,
+                message_id=message_id
+            )
+            success += 1
+        except Exception as e:
+            error_text = str(e)
+            if "bot was blocked by the user" in error_text or "user is deactivated" in error_text:
+                db.update_user_blocked(user_id, 1)
+                blocked += 1
+            else:
+                errors += 1
+                logger.error(f"Ошибка при пересылке пользователю {user_id}: {error_text}")
+    
+    report = (
+        f"✅ Рассылка завершена\n\n"
+        f"👥 Всего пользователей: {total}\n\n"
+        f"✅ Успешно: {success}\n"
+        f"🚫 Заблокировали бота: {blocked}\n"
+        f"❌ Другие ошибки: {errors}"
+    )
+    
+    return report
