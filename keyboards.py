@@ -24,12 +24,12 @@ def get_admin_main_keyboard() -> InlineKeyboardMarkup:
 def get_posts_list_keyboard(posts: List[Dict[str, Any]]) -> InlineKeyboardMarkup:
     """Клавиатура со списком рассылок"""
     builder = InlineKeyboardBuilder()
-    
+
     for post in posts:
         post_id = post["id"]
         title = post["title"]
         builder.button(text=f"{post_id}. {title}", callback_data=f"post_{post_id}")
-    
+
     builder.adjust(1)
     return builder.as_markup()
 
@@ -47,38 +47,43 @@ def get_post_detail_keyboard(post_id: int) -> InlineKeyboardMarkup:
 
 
 def get_groups_list_keyboard(groups: List[Dict[str, Any]], post_id: int, action: str) -> InlineKeyboardMarkup:
-    """Клавиатура со списком групп для добавления/удаления"""
+    """Клавиатура со списком групп для добавления/удаления/выбора"""
     builder = InlineKeyboardBuilder()
-    
+
     for group in groups:
         chat_id = group["chat_id"]
         title = group["title"]
         is_selected = group.get("is_selected", False)
-        
+
         if is_selected:
             text = f"☑️ {title}"
         else:
             text = f"⬜ {title}"
-        
+
         builder.button(text=text, callback_data=f"{action}_{post_id}_{chat_id}")
+
+    # Разные callback_data для разных действий
+    if action == "select":
+        builder.button(text="✅ Готово", callback_data=f"done_create_groups_{post_id}")
+    else:
+        builder.button(text="✅ Готово", callback_data=f"done_edit_groups_{post_id}")
     
-    builder.button(text="✅ Готово", callback_data=f"done_groups_{post_id}")
-    builder.button(text="◀ Назад", callback_data=f"post_{post_id}")
+    builder.button(text="◀ Назад", callback_data=f"post_{post_id}" if post_id != 0 else "back_to_list")
     builder.adjust(1)
     return builder.as_markup()
 
 
-def get_interval_keyboard(post_id: int) -> InlineKeyboardMarkup:
+def get_interval_keyboard(post_id: int, action: str = "edit") -> InlineKeyboardMarkup:
     """Клавиатура для выбора интервала"""
     builder = InlineKeyboardBuilder()
-    
+
     for interval_name, interval_minutes in INTERVALS.items():
         builder.button(
             text=interval_name,
-            callback_data=f"interval_{post_id}_{interval_minutes}"
+            callback_data=f"{action}_interval_{post_id}_{interval_minutes}"
         )
-    
-    builder.button(text="◀ Назад", callback_data=f"post_{post_id}")
+
+    builder.button(text="◀ Назад", callback_data=f"post_{post_id}" if post_id != 0 else "back_to_list")
     builder.adjust(1)
     return builder.as_markup()
 
@@ -104,6 +109,7 @@ def get_back_keyboard(callback_data: str) -> InlineKeyboardMarkup:
     builder = InlineKeyboardBuilder()
     builder.button(text="◀ Назад", callback_data=callback_data)
     return builder.as_markup()
+
 
 def confirmation_keyboard(mailing_type: str) -> InlineKeyboardMarkup:
     """Клавиатура подтверждения рассылки в ЛС"""
