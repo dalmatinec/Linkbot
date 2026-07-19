@@ -2,7 +2,7 @@
 import logging
 from aiogram import Router, F
 from aiogram.types import Message, CallbackQuery
-from aiogram.filters import Command, StateFilter
+from aiogram.filters import Command
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
 
@@ -365,32 +365,46 @@ async def remove_group_from_post(callback: CallbackQuery):
     await callback.answer()
 
 
-@router.callback_query(F.data.startswith("add_") | F.data.startswith("remove_"))
-async def toggle_group(callback: CallbackQuery):
+@router.callback_query(F.data.startswith("add_chat_"))
+async def toggle_add_group(callback: CallbackQuery):
     if not is_admin(callback.from_user.id):
         await callback.answer("⛔ Доступ запрещен", show_alert=True)
         return
     
     data_parts = callback.data.split("_")
-    action = data_parts[0]
-    post_id = int(data_parts[1])
-    chat_id = int(data_parts[2])
+    post_id = int(data_parts[2])
+    chat_id = int(data_parts[3])
     
-    if action == "add":
-        db.add_group_to_post(post_id, chat_id)
-    elif action == "remove":
-        db.remove_group_from_post(post_id, chat_id)
+    db.add_group_to_post(post_id, chat_id)
     
-    if action == "add":
-        groups = db.get_groups_with_status(post_id)
-    else:
-        groups = db.get_post_groups(post_id)
-        for group in groups:
-            group["is_selected"] = True
+    groups = db.get_groups_with_status(post_id)
     
     await callback.message.edit_text(
-        f"✅ Группа {'добавлена' if action == 'add' else 'удалена'}!",
-        reply_markup=get_groups_list_keyboard(groups, post_id, action)
+        "✅ Группа добавлена!",
+        reply_markup=get_groups_list_keyboard(groups, post_id, "add")
+    )
+    await callback.answer()
+
+
+@router.callback_query(F.data.startswith("remove_chat_"))
+async def toggle_remove_group(callback: CallbackQuery):
+    if not is_admin(callback.from_user.id):
+        await callback.answer("⛔ Доступ запрещен", show_alert=True)
+        return
+    
+    data_parts = callback.data.split("_")
+    post_id = int(data_parts[2])
+    chat_id = int(data_parts[3])
+    
+    db.remove_group_from_post(post_id, chat_id)
+    
+    groups = db.get_post_groups(post_id)
+    for group in groups:
+        group["is_selected"] = True
+    
+    await callback.message.edit_text(
+        "✅ Группа удалена!",
+        reply_markup=get_groups_list_keyboard(groups, post_id, "remove")
     )
     await callback.answer()
 
@@ -493,7 +507,11 @@ async def cancel_delete_post(callback: CallbackQuery):
         await callback.answer("⛔ Доступ запрещен", show_alert=True)
         return
     
-    await callback.message.edit_text("❌ Удаление отменено.")
+    post_id = int(callback.data.split("_")[2])
+    await callback.message.edit_text(
+        "❌ Удаление отменено.",
+        reply_markup=get_back_keyboard(f"post_{post_id}")
+    )
     await callback.answer()
 
 
