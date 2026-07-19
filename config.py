@@ -1,13 +1,18 @@
-BOT_TOKEN = "8480271932:AAEZn8XwfwC49wdi9CHZIGINrULiKzOQUrM"
-OWNER_ID = 8243233601
-ADMIN_CHAT_ID = -1003912132736
-SUBSCRIBE_CHANNEL = "@ladyshopinfo"
-WEBSITE_URL = "https://ladyshop.info"
-OPERATOR_ORG = "@mens_420"
-OPERATOR_HIM = "@lady_4mmc"
-LINK_LIFETIME = 15
-LINK_LIFETIMES = [15, 30, 60]
-FLOOD_LIMIT = 5
-FLOOD_SECONDS = 5
-FLOOD_BAN_MINUTES = 5
-DAILY_REPORT_TIME = "09:00"
+# config.py
+# Конфигурация бота
+
+BOT_TOKEN = "ВАШ_ТОКЕН_БОТА"
+
+# ID администраторов
+ADMIN_IDS = [123456789, 987654321]  # Замените на реальные ID
+
+# Путь к базе данных
+DB_PATH = "bot_database.db"
+
+# Интервалы для рассылок (в минутах)
+INTERVALS = {
+    "30 минут": 30,
+    "1 час": 60,
+    "90 минут": 90,
+    "2 часа": 120
+}
