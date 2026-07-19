@@ -60,15 +60,25 @@ def get_groups_list_keyboard(groups: List[Dict[str, Any]], post_id: int, action:
         else:
             text = f"⬜ {title}"
 
-        builder.button(text=text, callback_data=f"{action}_{post_id}_{chat_id}")
+        if action == "add":
+            callback_data = f"add_chat_{post_id}_{chat_id}"
+        elif action == "remove":
+            callback_data = f"remove_chat_{post_id}_{chat_id}"
+        else:
+            callback_data = f"select_{post_id}_{chat_id}"
 
-    # Разные callback_data для разных действий
+        builder.button(text=text, callback_data=callback_data)
+
     if action == "select":
         builder.button(text="✅ Готово", callback_data=f"done_create_groups_{post_id}")
     else:
         builder.button(text="✅ Готово", callback_data=f"done_edit_groups_{post_id}")
     
-    builder.button(text="◀ Назад", callback_data=f"post_{post_id}" if post_id != 0 else "back_to_list")
+    if post_id == 0:
+        builder.button(text="◀ Назад", callback_data="cancel_create_0")
+    else:
+        builder.button(text="◀ Назад", callback_data=f"post_{post_id}")
+    
     builder.adjust(1)
     return builder.as_markup()
 
@@ -83,7 +93,11 @@ def get_interval_keyboard(post_id: int, action: str = "edit") -> InlineKeyboardM
             callback_data=f"{action}_interval_{post_id}_{interval_minutes}"
         )
 
-    builder.button(text="◀ Назад", callback_data=f"post_{post_id}" if post_id != 0 else "back_to_list")
+    if post_id == 0:
+        builder.button(text="◀ Назад", callback_data="cancel_create_0")
+    else:
+        builder.button(text="◀ Назад", callback_data=f"post_{post_id}")
+    
     builder.adjust(1)
     return builder.as_markup()
 
