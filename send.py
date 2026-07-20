@@ -4,7 +4,7 @@ from aiogram.types import Message
 
 from database import get_database
 
-logger = logging.getLogger(name)
+logger = logging.getLogger(__name__)  # ✅
 db = get_database()
 
 
