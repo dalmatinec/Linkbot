@@ -16,6 +16,7 @@ from keyboards import (
     get_confirm_keyboard,
     get_back_keyboard
 )
+from send_group import forward_to_group
 
 logger = logging.getLogger(__name__)
 router = Router()
@@ -87,7 +88,8 @@ async def cmd_new(message: Message, state: FSMContext):
         source_chat_id=reply.chat.id,
         message_id=reply.message_id,
         title=title,
-        post_type="forward"
+        post_type="forward",
+        reply_message=reply
     )
 
     await state.set_state(CreatePostStates.waiting_for_groups)
@@ -234,11 +236,17 @@ async def confirm_create_post(callback: CallbackQuery, state: FSMContext):
     source_chat_id = state_data.get("source_chat_id")
     message_id = state_data.get("message_id")
     title = state_data.get("title", "Без названия")
+    reply_message = state_data.get("reply_message")
 
+    # Создаем пост
     post_id = db.create_post(title, post_type, source_chat_id, message_id, interval)
 
     for chat_id in selected_groups:
         db.add_group_to_post(post_id, chat_id)
+
+    # Отправляем сразу после создания
+    if reply_message:
+        await forward_to_group(callback.bot, post_id)
 
     await state.clear()
 
@@ -247,7 +255,8 @@ async def confirm_create_post(callback: CallbackQuery, state: FSMContext):
         f"📌 Название: {title}\n"
         f"📤 Тип: forward\n"
         f"🕒 Интервал: {interval} минут\n"
-        f"📢 Групп: {len(selected_groups)}",
+        f"📢 Групп: {len(selected_groups)}\n\n"
+        f"📨 Первая отправка выполнена!",
         reply_markup=get_back_keyboard("back_to_list")
     )
     await callback.answer()
