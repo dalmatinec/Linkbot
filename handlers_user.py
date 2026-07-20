@@ -9,7 +9,7 @@ from aiogram.fsm.state import State, StatesGroup
 from config import ADMIN_IDS
 from database import get_database
 from send import send_mailing
-from forward import forward_mailing
+from send import forward_mailing
 from keyboards import confirmation_keyboard
 
 logger = logging.getLogger(__name__)
