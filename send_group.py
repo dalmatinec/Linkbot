@@ -34,6 +34,7 @@ async def send_to_group(bot: Bot, post_id: int) -> str:
                 message_id=post["message_id"]
             )
             success += 1
+            await asyncio.sleep(0.5)  # Задержка 0.5 сек между группами
         except Exception as e:
             errors += 1
             logger.error(f"Ошибка при отправке в группу {chat_id}: {e}")
@@ -71,6 +72,7 @@ async def forward_to_group(bot: Bot, post_id: int) -> str:
                 message_id=post["message_id"]
             )
             success += 1
+            await asyncio.sleep(0.5)  # Задержка 0.5 сек между группами
         except Exception as e:
             errors += 1
             logger.error(f"Ошибка при пересылке в группу {chat_id}: {e}")
