@@ -1,4 +1,3 @@
-# main.py
 import asyncio
 import logging
 from aiogram import Bot, Dispatcher
@@ -28,23 +27,23 @@ async def run_scheduler(bot: Bot):
 
 async def main():
     logger.info("Запуск бота...")
-    
+
     bot = Bot(
         token=BOT_TOKEN,
         default=DefaultBotProperties(parse_mode=ParseMode.HTML)
     )
-    
+
     dp = Dispatcher()
-    
+
     dp.include_router(user_router)
     dp.include_router(group_router)
-    
+
     scheduler_task = asyncio.create_task(run_scheduler(bot))
-    
+
     await bot.delete_webhook(drop_pending_updates=True)
-    
+
     logger.info("Бот запущен!")
-    
+
     try:
         await dp.start_polling(bot)
     finally:
