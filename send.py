@@ -1,10 +1,11 @@
 # send.py
 import logging
+import asyncio
 from aiogram.types import Message
 
 from database import get_database
 
-logger = logging.getLogger(__name__)  # ✅
+logger = logging.getLogger(__name__)
 db = get_database()
 
 
@@ -17,10 +18,10 @@ async def send_mailing(message: Message, chat_id: int, message_id: int) -> str:
     success = 0
     blocked = 0
     errors = 0
-    
+
     if total == 0:
         return "❌ Нет активных пользователей для рассылки."
-    
+
     for user in users:
         user_id = user["user_id"]
         try:
@@ -30,6 +31,7 @@ async def send_mailing(message: Message, chat_id: int, message_id: int) -> str:
                 message_id=message_id
             )
             success += 1
+            await asyncio.sleep(0.5)  # Задержка 0.5 сек между пользователями
         except Exception as e:
             error_text = str(e)
             if "bot was blocked by the user" in error_text or "user is deactivated" in error_text:
@@ -38,7 +40,7 @@ async def send_mailing(message: Message, chat_id: int, message_id: int) -> str:
             else:
                 errors += 1
                 logger.error(f"Ошибка при отправке пользователю {user_id}: {error_text}")
-    
+
     report = (
         f"✅ Рассылка завершена\n\n"
         f"👥 Всего пользователей: {total}\n\n"
@@ -46,7 +48,7 @@ async def send_mailing(message: Message, chat_id: int, message_id: int) -> str:
         f"🚫 Заблокировали бота: {blocked}\n"
         f"❌ Другие ошибки: {errors}"
     )
-    
+
     return report
 
 
@@ -59,10 +61,10 @@ async def forward_mailing(message: Message, chat_id: int, message_id: int) -> st
     success = 0
     blocked = 0
     errors = 0
-    
+
     if total == 0:
         return "❌ Нет активных пользователей для рассылки."
-    
+
     for user in users:
         user_id = user["user_id"]
         try:
@@ -72,6 +74,7 @@ async def forward_mailing(message: Message, chat_id: int, message_id: int) -> st
                 message_id=message_id
             )
             success += 1
+            await asyncio.sleep(0.5)  # Задержка 0.5 сек между пользователями
         except Exception as e:
             error_text = str(e)
             if "bot was blocked by the user" in error_text or "user is deactivated" in error_text:
@@ -80,7 +83,7 @@ async def forward_mailing(message: Message, chat_id: int, message_id: int) -> st
             else:
                 errors += 1
                 logger.error(f"Ошибка при пересылке пользователю {user_id}: {error_text}")
-    
+
     report = (
         f"✅ Рассылка завершена\n\n"
         f"👥 Всего пользователей: {total}\n\n"
@@ -88,5 +91,5 @@ async def forward_mailing(message: Message, chat_id: int, message_id: int) -> st
         f"🚫 Заблокировали бота: {blocked}\n"
         f"❌ Другие ошибки: {errors}"
     )
-    
+
     return report
