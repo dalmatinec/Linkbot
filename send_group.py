@@ -34,10 +34,16 @@ async def send_to_group(bot: Bot, post_id: int) -> str:
                 message_id=post["message_id"]
             )
             success += 1
-            await asyncio.sleep(0.5)  # Задержка 0.5 сек между группами
+            await asyncio.sleep(0.5)
         except Exception as e:
             errors += 1
+            error_text = str(e).lower()
             logger.error(f"Ошибка при отправке в группу {chat_id}: {e}")
+            
+            # Проверяем, является ли ошибка необратимой
+            if _is_irreversible_error(error_text):
+                db.delete_group(chat_id)
+                logger.info(f"🗑️ Удалена неактуальная группа {chat_id} из базы")
 
     report = (
         f"📨 Рассылка #{post_id} выполнена\n"
@@ -72,10 +78,16 @@ async def forward_to_group(bot: Bot, post_id: int) -> str:
                 message_id=post["message_id"]
             )
             success += 1
-            await asyncio.sleep(0.5)  # Задержка 0.5 сек между группами
+            await asyncio.sleep(0.5)
         except Exception as e:
             errors += 1
+            error_text = str(e).lower()
             logger.error(f"Ошибка при пересылке в группу {chat_id}: {e}")
+            
+            # Проверяем, является ли ошибка необратимой
+            if _is_irreversible_error(error_text):
+                db.delete_group(chat_id)
+                logger.info(f"🗑️ Удалена неактуальная группа {chat_id} из базы")
 
     report = (
         f"📨 Рассылка #{post_id} выполнена\n"
@@ -84,6 +96,51 @@ async def forward_to_group(bot: Bot, post_id: int) -> str:
     )
 
     return report
+
+
+def _is_irreversible_error(error_text: str) -> bool:
+    """
+    Определяет, является ли ошибка необратимой (группа больше недоступна)
+    """
+    # Временные ошибки - не удаляем группу
+    temporary_keywords = [
+        "flood",
+        "retry after",
+        "timeout",
+        "network",
+        "telegram server error",
+        "too many requests",
+        "internal server error",
+        "service unavailable"
+    ]
+    
+    for keyword in temporary_keywords:
+        if keyword in error_text:
+            return False
+    
+    # Необратимые ошибки - удаляем группу
+    irreversible_keywords = [
+        "chat not found",
+        "group not found",
+        "supergroup not found",
+        "chat deleted",
+        "group chat was deleted",
+        "group is deactivated",
+        "supergroup is deactivated",
+        "chat_id is invalid",
+        "bot was kicked",
+        "bot is not a member",
+        "bot is no longer a member",
+        "bot not in chat",
+        "forbidden",
+    ]
+    
+    for keyword in irreversible_keywords:
+        if keyword in error_text:
+            return True
+    
+    # Если не удалось определить, считаем временной ошибкой
+    return False
 
 
 async def run_scheduled_mailing(bot: Bot):
