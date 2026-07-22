@@ -132,7 +132,6 @@ def _is_irreversible_error(error_text: str) -> bool:
         "bot is not a member",
         "bot is no longer a member",
         "bot not in chat",
-        "forbidden",
     ]
     
     for keyword in irreversible_keywords:
