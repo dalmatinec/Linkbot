@@ -135,7 +135,8 @@ class Scheduler:
         # сменился аккаунт юзербота - старый список групп больше не нужен
         row = self.db.one("SELECT val FROM settings WHERE key='ub_id'")
         switched = row is None or int(row["val"]) != self.ub.me.id
-        if not found and have and not switched:  # пустой ответ при том же аккаунте - сбой, ничего не удаляем
+        # совсем пустой ответ (ни одного диалога) - сбой, ничего не удаляем; есть чаты, но нет групп - честно чистим
+        if not found and have and not switched and not self.ub.last_dialogs:
             return
         added, gone = self.db.sync_groups(found)
         if switched:

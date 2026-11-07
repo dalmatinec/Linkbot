@@ -12,6 +12,7 @@ class Userbot:
     def __init__(self) -> None:
         self.client = TelegramClient(config.SESSION, config.API_ID, config.API_HASH)
         self.me = None
+        self.last_dialogs = 0  # сколько диалогов вернул последний запрос групп
 
     @property
     def ready(self) -> bool:
@@ -38,6 +39,7 @@ class Userbot:
             if d.is_group or getattr(e, "gigagroup", False):
                 found.append((utils.get_peer_id(e), d.name or str(d.id)))
         log.info("Диалогов юзербота: %s %s, из них групп: %s", total, kinds, len(found))
+        self.last_dialogs = total
         return found
 
     async def mention(self, chat_id: int, bot_username: str):
