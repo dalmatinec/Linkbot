@@ -20,7 +20,7 @@ from html import escape
 
 from aiogram import Bot
 from aiogram.exceptions import TelegramAPIError
-from telethon import errors
+from telethon import errors, types
 
 from . import config
 from .db import DB, now
@@ -142,21 +142,36 @@ class Scheduler:
                 return src
         raise PostError("Юзербот не увидел пересланный пост у себя. Попробуй ещё раз.")
 
-    def via_userbot(self, post: dict) -> bool:
-        """Пересылать ли пост юзерботом. Пересылки по настройке публикует бот копией,
-        если копию сделать можно (не пустой текст и не длиннее лимита)."""
+    async def via_userbot(self, post: dict) -> bool:
+        """Пересылать ли пост юзерботом. Пересылки по настройке публикует бот копией, но только
+        если копия выйдет без потерь. Бот не может: подпись к медиа длиннее 1024, премиум-эмодзи
+        в гостевом ответе. В этих случаях пересылает юзербот, так пост приходит целиком."""
         if post.get("mode") != "forward":
             return False
         if not self.db.setting("forward_as_copy"):
             return True
+        html = post["html"] or ""
         try:
-            check_len(post["kind"], post["html"])
+            check_len(post["kind"], html)
         except PostError:
             return True
-        return post["kind"] == "text" and not plain(post["html"]).strip()
+        if post["kind"] == "text" and not plain(html).strip():
+            return True
+        if "<tg-emoji" in html:
+            return True
+        if post["kind"] == "text":  # у оригинала было медиа, а сохранился только текст (длинная подпись)
+            try:
+                src = await self.ensure_src(post)
+                m = await self.ub.client.get_messages(self.bot_username, ids=src)
+                if m and m.media and not isinstance(m.media, types.MessageMediaWebPage):
+                    return True
+            except Exception as e:
+                log.info("Не проверил оригинал пересылки %s: %s", post["id"], e)
+                return True
+        return False
 
-    async def forward_post(self, chat_id: int, post: dict) -> int:
-        """Пересылка поста юзерботом. Если пост сохранён другим аккаунтом юзербота, сначала пересоздаёт его у текущего."""
+    async def ensure_src(self, post: dict) -> int:
+        """id пересылки у текущего юзербота. Если пост сохранён другим аккаунтом, пересоздаёт."""
         if not self.ub.ready:
             raise RuntimeError("юзербот не авторизован")
         if post.get("src_ub") != self.ub.me.id:
@@ -166,7 +181,12 @@ class Scheduler:
             self.db.update_post(post["id"], src_id=src, src_ub=self.ub.me.id)
             post["src_id"], post["src_ub"] = src, self.ub.me.id
             log.info("Пересылка %s пересохранена для юзербота %s", post["id"], self.ub.me.id)
-        return await self.ub.forward(chat_id, post["src_id"], self.bot_username)
+        return post["src_id"]
+
+    async def forward_post(self, chat_id: int, post: dict) -> int:
+        """Пересылка поста юзерботом. -> id сообщения в группе."""
+        src = await self.ensure_src(post)
+        return await self.ub.forward(chat_id, src, self.bot_username)
 
     def manual_block(self, chat_id: int) -> str | None:
         """Можно ли сейчас ручной вызов в этой группе. -> причина отказа или None.
@@ -320,7 +340,7 @@ class Scheduler:
                 idx = self.db.cursor(cid, chat_id)
                 post = posts[idx % len(posts)]
                 call = Call(chat_id, post, cid)
-                forward = self.via_userbot(post)
+                forward = await self.via_userbot(post)
                 try:
                     if forward:  # настоящая пересылка от юзербота, бот не нужен
                         fwd_id = await self.forward_post(chat_id, post)
