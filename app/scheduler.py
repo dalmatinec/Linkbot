@@ -132,9 +132,20 @@ class Scheduler:
             return
         found = await self.ub.groups()
         have = {g["chat_id"] for g in self.db.groups()}
-        if not found and have:  # пустой ответ при живом списке - сбой, ничего не удаляем
+        # сменился аккаунт юзербота - старый список групп больше не нужен
+        row = self.db.one("SELECT val FROM settings WHERE key='ub_id'")
+        switched = row is None or int(row["val"]) != self.ub.me.id
+        if not found and have and not switched:  # пустой ответ при том же аккаунте - сбой, ничего не удаляем
             return
-        self.db.sync_groups(found)
+        added, gone = self.db.sync_groups(found)
+        if switched:
+            self.db.x("INSERT INTO settings (key, val) VALUES ('ub_id', ?) "
+                      "ON CONFLICT(key) DO UPDATE SET val=excluded.val", str(self.ub.me.id))
+            if row is not None:
+                log.info("Юзербот сменился: групп %s, убрано старых %s", len(found), gone)
+                await self.notify(f"🔁 Юзербот сменился. Групп у нового аккаунта: {len(found)}, "
+                                  f"старых убрано: {gone}.\n\nПроверь 📣 Рассылки → группы.")
+                return
         new = [title for cid, title in found if cid not in have]
         if new:
             log.info("Новые группы: %s", ", ".join(new))
