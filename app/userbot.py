@@ -28,10 +28,16 @@ class Userbot:
         return True
 
     async def groups(self) -> list[tuple[int, str]]:
-        found = []
+        found, total, kinds = [], 0, {}
         async for d in self.client.iter_dialogs():
-            if d.is_group:
-                found.append((utils.get_peer_id(d.entity), d.name or str(d.id)))
+            total += 1
+            e = d.entity
+            kind = type(e).__name__ + (":mega" if getattr(e, "megagroup", False) else "") \
+                + (":giga" if getattr(e, "gigagroup", False) else "")
+            kinds[kind] = kinds.get(kind, 0) + 1
+            if d.is_group or getattr(e, "gigagroup", False):
+                found.append((utils.get_peer_id(e), d.name or str(d.id)))
+        log.info("Диалогов юзербота: %s %s, из них групп: %s", total, kinds, len(found))
         return found
 
     async def mention(self, chat_id: int, bot_username: str):
