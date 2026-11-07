@@ -201,28 +201,31 @@ class Scheduler:
             if c["active"] and c["next_run"] <= t and c["id"] not in self.running:
                 self.start_round(c["id"])
 
-    def start_round(self, cid: int) -> bool:
+    def start_round(self, cid: int, force: bool = False) -> bool:
+        """force=True: круг вне расписания (кнопка Круг сейчас) - без антифлуда и лимитов,
+        расписание следующего круга не сдвигается."""
         if cid in self.running:
             return False
         self.running.add(cid)
-        asyncio.create_task(self._round_safe(cid))
+        asyncio.create_task(self._round_safe(cid, force))
         return True
 
-    async def _round_safe(self, cid: int) -> None:
+    async def _round_safe(self, cid: int, force: bool = False) -> None:
         try:
-            await self.round(cid)
+            await self.round(cid, force)
         except Exception:
             log.exception("Ошибка круга рассылки %s", cid)
         finally:
             self.running.discard(cid)
 
     # ---------- круг ----------
-    async def round(self, cid: int) -> None:
+    async def round(self, cid: int, force: bool = False) -> None:
         camp = self.db.campaign(cid)
         if not camp:
             return
-        spread = camp["interval_min"] * 60 * 0.05  # ±5%, чтобы не было идеально ровного шага
-        self.db.update_campaign(cid, next_run=now() + camp["interval_min"] * 60 + int(random.uniform(-spread, spread)))
+        if not force:
+            spread = camp["interval_min"] * 60 * 0.05  # ±5%, чтобы не было идеально ровного шага
+            self.db.update_campaign(cid, next_run=now() + camp["interval_min"] * 60 + int(random.uniform(-spread, spread)))
 
         posts = [p for p in (self.db.post(pid) for pid in camp["posts"]) if p]
         chats = self.db.camp_chat_ids(cid)
@@ -238,7 +241,7 @@ class Scheduler:
         async with self.lock:
             for i, g in enumerate(groups):
                 chat_id, title = g["chat_id"], g["title"]
-                reason = self.flood_reason(chat_id)
+                reason = None if force else self.flood_reason(chat_id)
                 if reason:
                     skipped.append(f"{escape(title)}: {reason}")
                     continue

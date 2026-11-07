@@ -459,9 +459,10 @@ async def route(ctx: Ctx, parts: list[str]) -> None:
                 return await ctx.alert("Юзербот не авторизован.")
             if not c["posts"] or not db.camp_chat_ids(cid):
                 return await ctx.alert("Сначала выбери посты и группы.")
-            if not ctx.sched.start_round(cid):
+            if not ctx.sched.start_round(cid, force=True):
                 return await ctx.alert("Круг уже идёт.")
-            await ctx.alert("Круг запущен, отчёт придёт по окончании.")
+            await ctx.alert("Проверочный круг запущен без антифлуда и лимитов, расписание не сдвигается. "
+                            "Отчёт придёт по окончании.")
             return await scr_camp(ctx, cid)
         if act == "int":
             rows = [[(("✅ " if c["interval_min"] == m else "") + name, f"ci:{cid}:{m}") for m, name in INTERVALS[i:i + 4]]
