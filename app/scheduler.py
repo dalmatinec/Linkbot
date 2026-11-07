@@ -89,6 +89,24 @@ class Scheduler:
                 return call
         return None
 
+    def manual_post(self, chat_id: int) -> tuple[dict, int | None] | None:
+        """Пост для ручного вызова: следующий по кругу из рассылки этой группы (сначала активные),
+        если группа ни в одной рассылке - следующий из всех постов. -> (пост, id рассылки) или None."""
+        camps = [c for c in self.db.campaigns() if chat_id in self.db.camp_chat_ids(c["id"])]
+        camps.sort(key=lambda c: not c["active"])
+        for c in camps:
+            posts = [p for p in (self.db.post(pid) for pid in c["posts"]) if p]
+            if posts:
+                idx = self.db.cursor(c["id"], chat_id)
+                self.db.set_cursor(c["id"], chat_id, idx + 1)
+                return posts[idx % len(posts)], c["id"]
+        posts = self.db.posts()
+        if not posts:
+            return None
+        idx = self.db.cursor(0, chat_id)  # 0 - свой круг для групп без рассылки
+        self.db.set_cursor(0, chat_id, idx + 1)
+        return posts[idx % len(posts)], None
+
     def _drop(self, call: Call) -> None:
         q = self.pending.get(call.chat_id)
         if q and call in q:
