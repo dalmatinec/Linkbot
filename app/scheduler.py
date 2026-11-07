@@ -76,8 +76,15 @@ class Scheduler:
         last = self.db.last_ok(chat_id)
         if gap and last and now() - last < gap:
             return f"антифлуд, прошло {(now() - last) // 60} мин"
-        limit = self.db.setting("max_per_day")
-        if limit and self.db.ok_since(chat_id, now() - 86400) >= limit:
+        return self.limit_reason(chat_id)
+
+    def limit_reason(self, chat_id: int) -> str | None:
+        """Лимиты на группу: в час и в сутки (и для рассылок, и для ручных вызовов)."""
+        per_hour = self.db.setting("max_per_hour")
+        if per_hour and self.db.ok_since(chat_id, now() - 3600) >= per_hour:
+            return f"лимит {per_hour} в час"
+        per_day = self.db.setting("max_per_day")
+        if per_day and self.db.ok_since(chat_id, now() - 86400) >= per_day:
             return "лимит за сутки"
         return None
 
@@ -97,9 +104,9 @@ class Scheduler:
         last = max(self.db.last_ok(chat_id), self.manual_ts.get(chat_id, 0))
         if gap and last and now() - last < gap:
             return f"пауза, прошло {(now() - last) // 60} из {gap // 60} мин"
-        limit = self.db.setting("max_per_day")
-        if limit and self.db.ok_since(chat_id, now() - 86400) >= limit:
-            return "лимит за сутки"
+        reason = self.limit_reason(chat_id)
+        if reason:
+            return reason
         self.manual_ts[chat_id] = now()
         return None
 
