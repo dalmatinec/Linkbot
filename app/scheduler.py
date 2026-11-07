@@ -54,6 +54,7 @@ class Scheduler:
         self.pending: dict[int, deque[Call]] = {}
         self.running: set[int] = set()
         self.lock = asyncio.Lock()
+        self.manual_ts: dict[int, int] = {}  # время последнего ручного вызова по группе
 
     # ---------- общие ----------
     async def notify(self, text: str) -> None:
@@ -87,6 +88,19 @@ class Scheduler:
             call = q.popleft()
             if not call.fut.done():
                 return call
+        return None
+
+    def manual_block(self, chat_id: int) -> str | None:
+        """Можно ли сейчас ручной вызов в этой группе. -> причина отказа или None.
+        Если можно, сразу занимает слот, чтобы пачка упоминаний подряд не прошла."""
+        gap = self.db.setting("manual_gap") * 60
+        last = max(self.db.last_ok(chat_id), self.manual_ts.get(chat_id, 0))
+        if gap and last and now() - last < gap:
+            return f"пауза, прошло {(now() - last) // 60} из {gap // 60} мин"
+        limit = self.db.setting("max_per_day")
+        if limit and self.db.ok_since(chat_id, now() - 86400) >= limit:
+            return "лимит за сутки"
+        self.manual_ts[chat_id] = now()
         return None
 
     def manual_post(self, chat_id: int) -> tuple[dict, int | None] | None:

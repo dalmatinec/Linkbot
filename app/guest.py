@@ -47,7 +47,12 @@ async def on_guest(message: Message, sched: Scheduler) -> None:
                 call.fut.set_result(f"бот: {e}"[:200])
         return
 
-    # 2. ручной вызов
+    # 2. ручной вызов: не чаще manual_gap минут на группу и в пределах суточного лимита
+    reason = sched.manual_block(chat_id)
+    if reason:
+        log.info("Ручной вызов в %s пропущен: %s", chat_id, reason)
+        drop_mention(sched, chat_id, message)
+        return
     picked = sched.manual_post(chat_id)
     if picked is None:
         log.info("Ручной вызов в %s: нет постов", chat_id)
@@ -62,9 +67,14 @@ async def on_guest(message: Message, sched: Scheduler) -> None:
             await message.answer_guest_query(result=guest_result(post))
         sched.db.log_sent(chat_id, cid, post["id"], True)
         log.info("Ручной вызов в %s: отправлен пост %s", chat_id, post["id"])
-        # убираем «@бот»; чужое сообщение юзербот удалит, только если он админ группы
-        if sched.db.setting("delete_trigger") and sched.ub.ready:
-            asyncio.create_task(sched._delete_later(chat_id, message.message_id))
     except Exception as e:
+        sched.manual_ts.pop(chat_id, None)  # не получилось - слот не тратим
         log.warning("Ручной вызов в %s не удался: %s", chat_id, e)
         sched.db.log_sent(chat_id, cid, post["id"], False, f"ручной вызов: {e}"[:200])
+    drop_mention(sched, chat_id, message)
+
+
+def drop_mention(sched: Scheduler, chat_id: int, message: Message) -> None:
+    """Убрать «@бот» через delete_after сек. Чужое сообщение юзербот удалит, только если он админ группы."""
+    if sched.db.setting("delete_trigger") and sched.ub.ready:
+        asyncio.create_task(sched._delete_later(chat_id, message.message_id))
