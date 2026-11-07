@@ -66,10 +66,11 @@ class DB:
 
     def _migrate(self) -> None:
         """Пересылки: mode = copy | forward; src_id - id сообщения в чате юзербота с ботом;
-        orig_chat/orig_msg - где лежит оригинал у админа (для предпросмотра)."""
+        orig_chat/orig_msg - где лежит оригинал у админа (для предпросмотра и восстановления);
+        src_ub - id юзербота, у которого лежит src_id (после смены юзербота src_id пересоздаётся)."""
         cols = {r["name"] for r in self.q("PRAGMA table_info(posts)")}
         for name, ddl in [("mode", "TEXT NOT NULL DEFAULT 'copy'"), ("src_id", "INTEGER"),
-                          ("orig_chat", "INTEGER"), ("orig_msg", "INTEGER")]:
+                          ("orig_chat", "INTEGER"), ("orig_msg", "INTEGER"), ("src_ub", "INTEGER")]:
             if name not in cols:
                 self.x(f"ALTER TABLE posts ADD COLUMN {name} {ddl}")
 

@@ -41,29 +41,10 @@ def is_forward(message: Message) -> bool:
 
 async def save_forward(ctx: "Ctx", draft: dict, orig_chat: int, orig_msg: int) -> int:
     """Бот пересылает пост юзерботу в личку, юзербот запоминает id и потом пересылает его в группы."""
-    if not ctx.ub.ready:
-        raise PostError("Юзербот не авторизован, пересылку сохранить нельзя. Сохрани копией.")
-    username = ctx.sched.bot_username
-    since = now()
-    try:
-        await ctx.bot.forward_message(ctx.ub.me.id, orig_chat, orig_msg)
-    except TelegramAPIError:
-        await ctx.ub.start_bot(username)  # юзербот ещё не запускал бота - бот не может ему писать
-        await asyncio.sleep(2)
-        try:
-            await ctx.bot.forward_message(ctx.ub.me.id, orig_chat, orig_msg)
-        except TelegramAPIError as e:
-            raise PostError(f"Пост не пересылается ({getattr(e, 'message', e)}). Видимо, в источнике запрет "
-                            "пересылки. Сохрани копией.")
-    src = None
-    for _ in range(5):
-        await asyncio.sleep(1)
-        src = await ctx.ub.find_forward(username, since)
-        if src:
-            break
-    if not src:
-        raise PostError("Юзербот не увидел пересланный пост у себя. Попробуй ещё раз.")
-    return ctx.db.add_post(**draft, mode="forward", src_id=src, orig_chat=orig_chat, orig_msg=orig_msg)
+    src = await ctx.sched.make_src(orig_chat, orig_msg)
+    pid = ctx.db.add_post(**draft, mode="forward", src_id=src, orig_chat=orig_chat, orig_msg=orig_msg)
+    ctx.db.update_post(pid, src_ub=ctx.ub.me.id)
+    return pid
 
 
 def kb(rows: list) -> InlineKeyboardMarkup:

@@ -60,9 +60,7 @@ async def on_guest(message: Message, sched: Scheduler) -> None:
     post, cid = picked
     try:
         if post.get("mode") == "forward":  # пересылку гостевой бот не умеет, её делает юзербот
-            if not sched.ub.ready:
-                raise RuntimeError("юзербот не авторизован")
-            await sched.ub.forward(chat_id, post["src_id"], sched.bot_username)
+            await sched.forward_post(chat_id, post)
         else:
             await message.answer_guest_query(result=guest_result(post))
         sched.db.log_sent(chat_id, cid, post["id"], True)

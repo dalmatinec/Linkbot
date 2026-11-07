@@ -19,10 +19,12 @@ from datetime import datetime, timedelta, timezone
 from html import escape
 
 from aiogram import Bot
+from aiogram.exceptions import TelegramAPIError
 from telethon import errors
 
 from . import config
 from .db import DB, now
+from .posts import PostError
 from .userbot import Userbot
 
 log = logging.getLogger(__name__)
@@ -96,6 +98,42 @@ class Scheduler:
             if not call.fut.done():
                 return call
         return None
+
+    # ---------- пересылки ----------
+    async def make_src(self, orig_chat: int, orig_msg: int) -> int:
+        """Бот пересылает оригинал поста юзерботу в личку. -> id этого сообщения у юзербота."""
+        if not self.ub.ready:
+            raise PostError("Юзербот не авторизован, пересылку сохранить нельзя. Сохрани копией.")
+        since = now()
+        try:
+            await self.bot.forward_message(self.ub.me.id, orig_chat, orig_msg)
+        except TelegramAPIError:
+            await self.ub.start_bot(self.bot_username)  # юзербот ещё не запускал бота - бот не может ему писать
+            await asyncio.sleep(2)
+            try:
+                await self.bot.forward_message(self.ub.me.id, orig_chat, orig_msg)
+            except TelegramAPIError as e:
+                raise PostError(f"Пост не пересылается ({getattr(e, 'message', e)}). Видимо, оригинал удалён "
+                                "или в источнике запрет пересылки. Перешли пост боту заново.")
+        for _ in range(5):
+            await asyncio.sleep(1)
+            src = await self.ub.find_forward(self.bot_username, since)
+            if src:
+                return src
+        raise PostError("Юзербот не увидел пересланный пост у себя. Попробуй ещё раз.")
+
+    async def forward_post(self, chat_id: int, post: dict) -> None:
+        """Пересылка поста юзерботом. Если пост сохранён другим аккаунтом юзербота, сначала пересоздаёт его у текущего."""
+        if not self.ub.ready:
+            raise RuntimeError("юзербот не авторизован")
+        if post.get("src_ub") != self.ub.me.id:
+            if not post.get("orig_chat") or not post.get("orig_msg"):
+                raise PostError("пересылка от старого юзербота, перешли пост боту заново")
+            src = await self.make_src(post["orig_chat"], post["orig_msg"])
+            self.db.update_post(post["id"], src_id=src, src_ub=self.ub.me.id)
+            post["src_id"], post["src_ub"] = src, self.ub.me.id
+            log.info("Пересылка %s пересохранена для юзербота %s", post["id"], self.ub.me.id)
+        await self.ub.forward(chat_id, post["src_id"], self.bot_username)
 
     def manual_block(self, chat_id: int) -> str | None:
         """Можно ли сейчас ручной вызов в этой группе. -> причина отказа или None.
@@ -251,7 +289,7 @@ class Scheduler:
                 forward = post.get("mode") == "forward"
                 try:
                     if forward:  # настоящая пересылка от юзербота, бот не нужен
-                        await self.ub.forward(chat_id, post["src_id"], self.bot_username)
+                        await self.forward_post(chat_id, post)
                         self.db.set_cursor(cid, chat_id, idx + 1)
                         self.db.log_sent(chat_id, cid, post["id"], True)
                         self.db.update_group(chat_id, errors=0)
