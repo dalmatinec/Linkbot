@@ -250,6 +250,7 @@ class Scheduler:
                         self.pending.setdefault(chat_id, deque()).append(call)
                         msg = await self.ub.mention(chat_id, self.bot_username)
                         call.trigger_id = msg.id
+                        log.info("Круг %s: юзербот упомянул бота в %s (%s)", cid, chat_id, title)
                         self.db.set_cursor(cid, chat_id, idx + 1)
                         calls.append((call, title))
                 except errors.FloodWaitError as e:
@@ -298,6 +299,7 @@ class Scheduler:
         if skipped:
             report += "\n" + "\n".join(f"• {s}" for s in skipped[:15])
         self.db.update_campaign(cid, last_report=f"{fmt_time(now())}: {ok} из {len(groups)}")
+        log.info("Итог круга %s: %s из %s. %s", cid, ok, len(groups), "; ".join(skipped) or "без ошибок")
         if paused:
             await self.notify("\n".join(paused))
         if self.db.setting("reports"):
