@@ -2,9 +2,9 @@
 
 Два случая:
   1. Круг рассылки: юзербот пишет «@бот», планировщик ждёт пост для этой группы.
-  2. Ручной вызов в любой момент: упоминание от юзербота или владельца (OWNER_IDS),
-     когда планировщик ничего не ждёт. Бот публикует следующий пост по кругу.
-Посторонние упоминания игнорируются.
+  2. Ручной вызов в любой момент: упоминание от юзербота (и от владельцев, если включено
+     в настройках), когда планировщик ничего не ждёт. Бот публикует следующий пост по кругу.
+Остальные упоминания игнорируются.
 """
 import asyncio
 import logging
@@ -30,8 +30,9 @@ async def on_guest(message: Message, sched: Scheduler) -> None:
     if not caller:
         return
     is_ub = sched.ub.ready and caller.id == sched.ub.me.id
-    if not is_ub and caller.id not in config.OWNER_IDS:
-        log.info("Пропуск: вызвал посторонний %s", caller.id)
+    owner_ok = caller.id in config.OWNER_IDS and sched.db.setting("owner_mentions")
+    if not is_ub and not owner_ok:
+        log.info("Пропуск: вызвал не юзербот (%s)", caller.id)
         return
 
     # 1. вызов из круга рассылки
