@@ -24,7 +24,7 @@ from telethon import errors
 
 from . import config
 from .db import DB, now
-from .posts import PostError
+from .posts import PostError, check_len, plain
 from .userbot import Userbot
 
 log = logging.getLogger(__name__)
@@ -141,6 +141,19 @@ class Scheduler:
             if src:
                 return src
         raise PostError("Юзербот не увидел пересланный пост у себя. Попробуй ещё раз.")
+
+    def via_userbot(self, post: dict) -> bool:
+        """Пересылать ли пост юзерботом. Пересылки по настройке публикует бот копией,
+        если копию сделать можно (не пустой текст и не длиннее лимита)."""
+        if post.get("mode") != "forward":
+            return False
+        if not self.db.setting("forward_as_copy"):
+            return True
+        try:
+            check_len(post["kind"], post["html"])
+        except PostError:
+            return True
+        return post["kind"] == "text" and not plain(post["html"]).strip()
 
     async def forward_post(self, chat_id: int, post: dict) -> int:
         """Пересылка поста юзерботом. Если пост сохранён другим аккаунтом юзербота, сначала пересоздаёт его у текущего."""
@@ -307,7 +320,7 @@ class Scheduler:
                 idx = self.db.cursor(cid, chat_id)
                 post = posts[idx % len(posts)]
                 call = Call(chat_id, post, cid)
-                forward = post.get("mode") == "forward"
+                forward = self.via_userbot(post)
                 try:
                     if forward:  # настоящая пересылка от юзербота, бот не нужен
                         fwd_id = await self.forward_post(chat_id, post)

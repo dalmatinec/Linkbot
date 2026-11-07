@@ -60,7 +60,7 @@ async def on_guest(message: Message, sched: Scheduler) -> None:
         return
     post, cid = picked
     try:
-        if post.get("mode") == "forward":  # пересылку гостевой бот не умеет, её делает юзербот
+        if sched.via_userbot(post):  # настоящую пересылку гостевой бот не умеет, её делает юзербот
             await sched.forward_post(chat_id, post)
         else:
             await message.answer_guest_query(result=guest_result(post))
