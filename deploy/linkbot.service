@@ -1,0 +1,13 @@
+[Unit]
+Description=Linkbot (guest ads bot + userbot)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+WorkingDirectory=/opt/linkbot
+ExecStart=/opt/linkbot/.venv/bin/python -m app
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

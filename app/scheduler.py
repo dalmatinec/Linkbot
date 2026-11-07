@@ -1,0 +1,227 @@
+"""Планировщик: круги рассылок, очередь вызовов, антифлуд, автопауза групп.
+
+Как идёт один круг рассылки:
+  1. По каждой группе рассылки (по очереди, с задержкой mention_delay + случайная добавка)
+     проверяется антифлуд, выбирается следующий пост по кругу, ставится в очередь ожидания,
+     юзербот пишет в группу «@бот».
+  2. Гостевой бот получает вызов, берёт из очереди пост для этой группы и публикует его.
+  3. После прохода по всем группам круг ждёт ответов (answer_timeout), считает итог,
+     ошибки подряд копятся и при error_limit группа ставится на паузу.
+Круги разных рассылок не перемешиваются: юзербот тегает только по одной рассылке за раз.
+"""
+import asyncio
+import logging
+import random
+from collections import deque
+from dataclasses import dataclass, field
+from datetime import datetime, timedelta, timezone
+from html import escape
+
+from aiogram import Bot
+from telethon import errors
+
+from . import config
+from .db import DB, now
+from .userbot import Userbot
+
+log = logging.getLogger(__name__)
+
+
+@dataclass
+class Call:
+    chat_id: int
+    post: dict
+    campaign_id: int | None
+    fut: asyncio.Future = field(default_factory=lambda: asyncio.get_running_loop().create_future())
+    trigger_id: int | None = None
+
+
+def local_now() -> datetime:
+    return datetime.now(timezone(timedelta(hours=config.TZ_OFFSET)))
+
+
+def fmt_time(ts: int) -> str:
+    if not ts:
+        return "-"
+    dt = datetime.fromtimestamp(ts, timezone(timedelta(hours=config.TZ_OFFSET)))
+    return dt.strftime("%d.%m %H:%M")
+
+
+class Scheduler:
+    def __init__(self, db: DB, bot: Bot, ub: Userbot, bot_username: str) -> None:
+        self.db, self.bot, self.ub, self.bot_username = db, bot, ub, bot_username
+        self.pending: dict[int, deque[Call]] = {}
+        self.running: set[int] = set()
+        self.lock = asyncio.Lock()
+
+    # ---------- общие ----------
+    async def notify(self, text: str) -> None:
+        for uid in config.OWNER_IDS:
+            try:
+                await self.bot.send_message(uid, text)
+            except Exception as e:
+                log.info("Не отправил уведомление %s: %s", uid, e)
+
+    def quiet(self) -> bool:
+        a, b = self.db.setting("quiet_from"), self.db.setting("quiet_to")
+        if a < 0 or b < 0 or a == b:
+            return False
+        h = local_now().hour
+        return a <= h < b if a < b else (h >= a or h < b)
+
+    def flood_reason(self, chat_id: int) -> str | None:
+        gap = self.db.setting("min_gap") * 60
+        last = self.db.last_ok(chat_id)
+        if gap and last and now() - last < gap:
+            return f"антифлуд, прошло {(now() - last) // 60} мин"
+        limit = self.db.setting("max_per_day")
+        if limit and self.db.ok_since(chat_id, now() - 86400) >= limit:
+            return "лимит за сутки"
+        return None
+
+    def take(self, chat_id: int) -> Call | None:
+        """Гостевой бот забирает вызов для группы."""
+        q = self.pending.get(chat_id)
+        while q:
+            call = q.popleft()
+            if not call.fut.done():
+                return call
+        return None
+
+    def _drop(self, call: Call) -> None:
+        q = self.pending.get(call.chat_id)
+        if q and call in q:
+            q.remove(call)
+
+    def _fail(self, chat_id: int, title: str, reason: str, call: Call | None = None) -> str | None:
+        """Учёт ошибки. -> текст, если группа ушла на автопаузу."""
+        self.db.log_sent(chat_id, call.campaign_id if call else None, call.post["id"] if call else None, False, reason)
+        g = self.db.group(chat_id)
+        if not g:
+            return None
+        errs = g["errors"] + 1
+        self.db.update_group(chat_id, errors=errs)
+        if errs >= self.db.setting("error_limit") and g["enabled"]:
+            self.db.update_group(chat_id, enabled=0, pause_reason=reason)
+            return f"⏸ {escape(title)}: на паузе после {errs} ошибок подряд ({escape(reason)})"
+        return None
+
+    # ---------- цикл ----------
+    async def loop(self) -> None:
+        while True:
+            try:
+                await self.tick()
+            except Exception:
+                log.exception("Ошибка планировщика")
+            await asyncio.sleep(15)
+
+    async def tick(self) -> None:
+        if not self.ub.ready or self.quiet():
+            return
+        t = now()
+        for c in self.db.campaigns():
+            if c["active"] and c["next_run"] <= t and c["id"] not in self.running:
+                self.start_round(c["id"])
+
+    def start_round(self, cid: int) -> bool:
+        if cid in self.running:
+            return False
+        self.running.add(cid)
+        asyncio.create_task(self._round_safe(cid))
+        return True
+
+    async def _round_safe(self, cid: int) -> None:
+        try:
+            await self.round(cid)
+        except Exception:
+            log.exception("Ошибка круга рассылки %s", cid)
+        finally:
+            self.running.discard(cid)
+
+    # ---------- круг ----------
+    async def round(self, cid: int) -> None:
+        camp = self.db.campaign(cid)
+        if not camp:
+            return
+        spread = camp["interval_min"] * 60 * 0.05  # ±5%, чтобы не было идеально ровного шага
+        self.db.update_campaign(cid, next_run=now() + camp["interval_min"] * 60 + int(random.uniform(-spread, spread)))
+
+        posts = [p for p in (self.db.post(pid) for pid in camp["posts"]) if p]
+        chats = self.db.camp_chat_ids(cid)
+        groups = [g for g in self.db.groups() if g["chat_id"] in chats and g["enabled"]]
+        if not posts or not groups:
+            await self.notify(f"📣 {escape(camp['title'])}: пропуск, нет {'постов' if not posts else 'активных групп'}.")
+            return
+
+        calls: list[tuple[Call, str]] = []
+        skipped: list[str] = []
+        paused: list[str] = []
+        async with self.lock:
+            for i, g in enumerate(groups):
+                chat_id, title = g["chat_id"], g["title"]
+                reason = self.flood_reason(chat_id)
+                if reason:
+                    skipped.append(f"{escape(title)}: {reason}")
+                    continue
+                idx = self.db.cursor(cid, chat_id)
+                post = posts[idx % len(posts)]
+                call = Call(chat_id, post, cid)
+                self.pending.setdefault(chat_id, deque()).append(call)
+                try:
+                    msg = await self.ub.mention(chat_id, self.bot_username)
+                    call.trigger_id = msg.id
+                    self.db.set_cursor(cid, chat_id, idx + 1)
+                    calls.append((call, title))
+                except errors.FloodWaitError as e:
+                    self._drop(call)
+                    skipped.append(f"{escape(title)}: FloodWait {e.seconds} сек")
+                    log.warning("FloodWait %s сек, жду", e.seconds)
+                    await asyncio.sleep(e.seconds + 5)
+                    continue
+                except errors.SlowModeWaitError as e:
+                    self._drop(call)
+                    skipped.append(f"{escape(title)}: медленный режим, {e.seconds} сек")
+                except Exception as e:
+                    self._drop(call)
+                    p = self._fail(chat_id, title, f"юзербот: {type(e).__name__}", call)
+                    skipped.append(f"{escape(title)}: {type(e).__name__}")
+                    if p:
+                        paused.append(p)
+                if i < len(groups) - 1:
+                    await asyncio.sleep(self.db.setting("mention_delay") + random.uniform(0, self.db.setting("jitter")))
+
+        # ждём ответов бота
+        if calls:
+            await asyncio.wait([c.fut for c, _ in calls], timeout=self.db.setting("answer_timeout"))
+        ok = 0
+        for call, title in calls:
+            result = call.fut.result() if call.fut.done() else "бот не ответил вовремя"
+            if result is True:
+                ok += 1
+                self.db.log_sent(call.chat_id, cid, call.post["id"], True)
+                self.db.update_group(call.chat_id, errors=0)
+                if self.db.setting("delete_trigger") and call.trigger_id:
+                    asyncio.create_task(self._delete_later(call.chat_id, call.trigger_id))
+            else:
+                self._drop(call)
+                if not call.fut.done():
+                    call.fut.cancel()
+                if call.trigger_id:  # голый «@бот» без поста не оставляем
+                    await self.ub.delete(call.chat_id, call.trigger_id)
+                p = self._fail(call.chat_id, title, str(result), call)
+                skipped.append(f"{escape(title)}: {escape(str(result))}")
+                if p:
+                    paused.append(p)
+
+        report = f"📣 <b>{escape(camp['title'])}</b>: {ok} из {len(groups)}"
+        if skipped:
+            report += "\n" + "\n".join(f"• {s}" for s in skipped[:15])
+        self.db.update_campaign(cid, last_report=f"{fmt_time(now())}: {ok} из {len(groups)}")
+        if paused:
+            await self.notify("\n".join(paused))
+        if self.db.setting("reports"):
+            await self.notify(report)
+
+    async def _delete_later(self, chat_id: int, msg_id: int) -> None:
+        await asyncio.sleep(self.db.setting("delete_after"))
+        await self.ub.delete(chat_id, msg_id)
