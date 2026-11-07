@@ -142,7 +142,7 @@ class Scheduler:
                 return src
         raise PostError("Юзербот не увидел пересланный пост у себя. Попробуй ещё раз.")
 
-    async def forward_post(self, chat_id: int, post: dict) -> None:
+    async def forward_post(self, chat_id: int, post: dict) -> int:
         """Пересылка поста юзерботом. Если пост сохранён другим аккаунтом юзербота, сначала пересоздаёт его у текущего."""
         if not self.ub.ready:
             raise RuntimeError("юзербот не авторизован")
@@ -153,7 +153,7 @@ class Scheduler:
             self.db.update_post(post["id"], src_id=src, src_ub=self.ub.me.id)
             post["src_id"], post["src_ub"] = src, self.ub.me.id
             log.info("Пересылка %s пересохранена для юзербота %s", post["id"], self.ub.me.id)
-        await self.ub.forward(chat_id, post["src_id"], self.bot_username)
+        return await self.ub.forward(chat_id, post["src_id"], self.bot_username)
 
     def manual_block(self, chat_id: int) -> str | None:
         """Можно ли сейчас ручной вызов в этой группе. -> причина отказа или None.
@@ -294,6 +294,7 @@ class Scheduler:
 
         calls: list[tuple[Call, str]] = []
         direct_ok = 0
+        forwarded: list[tuple[int, int, str, dict]] = []  # пересылки: проверим, что модерация их не удалила
         skipped: list[str] = []
         paused: list[str] = []
         async with self.lock:
@@ -309,11 +310,9 @@ class Scheduler:
                 forward = post.get("mode") == "forward"
                 try:
                     if forward:  # настоящая пересылка от юзербота, бот не нужен
-                        await self.forward_post(chat_id, post)
+                        fwd_id = await self.forward_post(chat_id, post)
                         self.db.set_cursor(cid, chat_id, idx + 1)
-                        self.db.log_sent(chat_id, cid, post["id"], True)
-                        self.db.update_group(chat_id, errors=0)
-                        direct_ok += 1
+                        forwarded.append((chat_id, fwd_id, title, post))
                     else:  # копия через гостевой режим: упоминание, бот отвечает постом
                         self.pending.setdefault(chat_id, deque()).append(call)
                         msg = await self.ub.mention(chat_id, self.bot_username)
@@ -343,6 +342,20 @@ class Scheduler:
         # ждём ответов бота
         if calls:
             await asyncio.wait([c.fut for c, _ in calls], timeout=self.db.setting("answer_timeout"))
+        elif forwarded:
+            await asyncio.sleep(15)  # даём антиспам-ботам группы время сработать
+        for chat_id, fwd_id, title, post in forwarded:
+            if await self.ub.alive(chat_id, fwd_id):
+                direct_ok += 1
+                self.db.log_sent(chat_id, cid, post["id"], True)
+                self.db.update_group(chat_id, errors=0)
+            else:
+                reason = "пост удалён в группе (антиспам или админ)"
+                log.warning("%s: %s", title, reason)
+                skipped.append(f"{escape(title)}: {reason}")
+                p = self._fail(chat_id, title, reason, Call(chat_id, post, cid))
+                if p:
+                    paused.append(p)
         ok = direct_ok
         for call, title in calls:
             result = call.fut.result() if call.fut.done() else "бот не ответил вовремя"

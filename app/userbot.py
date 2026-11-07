@@ -58,10 +58,22 @@ class Userbot:
                 return m.id
         return None
 
-    async def forward(self, chat_id: int, msg_id: int, bot_username: str) -> None:
+    async def forward(self, chat_id: int, msg_id: int, bot_username: str) -> int:
+        """-> id пересланного сообщения в группе."""
         res = await self.client.forward_messages(chat_id, msg_id, from_peer=bot_username)
         if not res:
             raise RuntimeError("сообщение для пересылки не найдено")
+        log.info("Переслал в %s, сообщение %s", chat_id, res.id)
+        return res.id
+
+    async def alive(self, chat_id: int, msg_id: int) -> bool:
+        """Сообщение ещё есть в группе (не удалено модерацией)."""
+        try:
+            m = await self.client.get_messages(chat_id, ids=msg_id)
+            return m is not None
+        except Exception as e:
+            log.info("Не проверил сообщение %s в %s: %s", msg_id, chat_id, e)
+            return True
 
     async def delete(self, chat_id: int, msg_id: int) -> None:
         try:
