@@ -61,15 +61,21 @@ def check_len(kind: str, html: str) -> None:
                         + (" (у медиа подпись короче)." if kind != "text" else "."))
 
 
-def capture(message: Message) -> dict:
-    """Новое или пересланное сообщение -> поля поста. URL-кнопки пересланного поста сохраняются."""
-    if message.media_group_id:
-        raise PostError("Альбомы гостевой бот отправить не может. Пришли одно фото или видео.")
-    kind, file_id = message_media(message)
-    html = message_html(message)
-    if kind == "text" and not html:
-        raise PostError("Пустой пост.")
-    check_len(kind, html)
+def capture(message: Message, strict: bool = True) -> dict:
+    """Новое или пересланное сообщение -> поля поста. URL-кнопки пересланного поста сохраняются.
+    strict=False для пересылок: юзербот перешлёт как есть, ограничения копии не важны."""
+    try:
+        if message.media_group_id:
+            raise PostError("Альбомы гостевой бот отправить не может. Пришли одно фото или видео.")
+        kind, file_id = message_media(message)
+        html = message_html(message)
+        if kind == "text" and not html:
+            raise PostError("Пустой пост.")
+        check_len(kind, html)
+    except PostError:
+        if strict:
+            raise
+        kind, file_id, html = "text", None, message_html(message)
     buttons = []
     kb = message.reply_markup
     for row in (kb.inline_keyboard if isinstance(kb, InlineKeyboardMarkup) else []):
@@ -77,7 +83,7 @@ def capture(message: Message) -> dict:
              for b in row if b.url]
         if r:
             buttons.append(r)
-    title = " ".join(plain(html).split())[:30] or KIND_NAMES[kind]
+    title = " ".join(plain(html).split())[:30] or ("пересылка" if not strict else KIND_NAMES[kind])
     return {"title": title, "kind": kind, "file_id": file_id, "html": html, "buttons": buttons}
 
 

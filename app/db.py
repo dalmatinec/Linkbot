@@ -60,6 +60,16 @@ class DB:
         self.c.row_factory = sqlite3.Row
         self.c.execute("PRAGMA journal_mode=WAL")
         self.c.executescript(SCHEMA)
+        self._migrate()
+
+    def _migrate(self) -> None:
+        """Пересылки: mode = copy | forward; src_id - id сообщения в чате юзербота с ботом;
+        orig_chat/orig_msg - где лежит оригинал у админа (для предпросмотра)."""
+        cols = {r["name"] for r in self.q("PRAGMA table_info(posts)")}
+        for name, ddl in [("mode", "TEXT NOT NULL DEFAULT 'copy'"), ("src_id", "INTEGER"),
+                          ("orig_chat", "INTEGER"), ("orig_msg", "INTEGER")]:
+            if name not in cols:
+                self.x(f"ALTER TABLE posts ADD COLUMN {name} {ddl}")
 
     def q(self, sql: str, *a) -> list[sqlite3.Row]:
         return self.c.execute(sql, a).fetchall()
@@ -94,9 +104,12 @@ class DB:
     def post(self, pid: int) -> dict | None:
         return self._post(self.one("SELECT * FROM posts WHERE id=?", pid))
 
-    def add_post(self, title: str, kind: str, file_id: str | None, html: str, buttons: list) -> int:
-        return self.x("INSERT INTO posts (title, kind, file_id, html, buttons, created) VALUES (?, ?, ?, ?, ?, ?)",
-                      title, kind, file_id, html, json.dumps(buttons, ensure_ascii=False), now()).lastrowid
+    def add_post(self, title: str, kind: str, file_id: str | None, html: str, buttons: list, mode: str = "copy",
+                 src_id: int | None = None, orig_chat: int | None = None, orig_msg: int | None = None) -> int:
+        return self.x("INSERT INTO posts (title, kind, file_id, html, buttons, created, mode, src_id, orig_chat, orig_msg)"
+                      " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                      title, kind, file_id, html, json.dumps(buttons, ensure_ascii=False), now(), mode, src_id,
+                      orig_chat, orig_msg).lastrowid
 
     def update_post(self, pid: int, **fields) -> None:
         if "buttons" in fields:

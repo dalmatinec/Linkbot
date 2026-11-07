@@ -37,6 +37,24 @@ class Userbot:
     async def mention(self, chat_id: int, bot_username: str):
         return await self.client.send_message(chat_id, f"@{bot_username}")
 
+    # ---------- пересылки ----------
+    # Бот пересылает пост юзерботу в личку, юзербот потом пересылает это сообщение в группы.
+    # Пересылка пересланного сохраняет исходную плашку «Переслано из ...», кнопки и премиум-эмодзи.
+    async def start_bot(self, bot_username: str) -> None:
+        await self.client.send_message(bot_username, "/start")
+
+    async def find_forward(self, bot_username: str, since: int) -> int | None:
+        """id самого свежего пересланного сообщения от бота не старше since (unix)."""
+        for m in await self.client.get_messages(bot_username, limit=5):
+            if not m.out and m.fwd_from and m.date.timestamp() >= since - 5:
+                return m.id
+        return None
+
+    async def forward(self, chat_id: int, msg_id: int, bot_username: str) -> None:
+        res = await self.client.forward_messages(chat_id, msg_id, from_peer=bot_username)
+        if not res:
+            raise RuntimeError("сообщение для пересылки не найдено")
+
     async def delete(self, chat_id: int, msg_id: int) -> None:
         try:
             await self.client.delete_messages(chat_id, [msg_id])

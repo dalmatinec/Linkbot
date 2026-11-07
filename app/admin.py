@@ -1,9 +1,10 @@
 """Админка в боте: посты, конструктор кнопок, рассылки, группы, настройки, статус."""
+import asyncio
 import logging
 from html import escape
 
 from aiogram import Bot, F, Router
-from aiogram.exceptions import TelegramBadRequest
+from aiogram.exceptions import TelegramAPIError, TelegramBadRequest
 from aiogram.filters import Command, CommandStart
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
@@ -29,6 +30,40 @@ INTERVALS = [(15, "15 мин"), (30, "30 мин"), (60, "1 ч"), (120, "2 ч"), 
 
 class S(StatesGroup):
     wait = State()
+
+
+ICONS = {"text": "📄", "photo": "🖼", "video": "🎬", "animation": "🎞", "document": "📎"}
+
+
+def is_forward(message: Message) -> bool:
+    return message.forward_origin is not None
+
+
+async def save_forward(ctx: "Ctx", draft: dict, orig_chat: int, orig_msg: int) -> int:
+    """Бот пересылает пост юзерботу в личку, юзербот запоминает id и потом пересылает его в группы."""
+    if not ctx.ub.ready:
+        raise PostError("Юзербот не авторизован, пересылку сохранить нельзя. Сохрани копией.")
+    username = ctx.sched.bot_username
+    since = now()
+    try:
+        await ctx.bot.forward_message(ctx.ub.me.id, orig_chat, orig_msg)
+    except TelegramAPIError:
+        await ctx.ub.start_bot(username)  # юзербот ещё не запускал бота - бот не может ему писать
+        await asyncio.sleep(2)
+        try:
+            await ctx.bot.forward_message(ctx.ub.me.id, orig_chat, orig_msg)
+        except TelegramAPIError as e:
+            raise PostError(f"Пост не пересылается ({getattr(e, 'message', e)}). Видимо, в источнике запрет "
+                            "пересылки. Сохрани копией.")
+    src = None
+    for _ in range(5):
+        await asyncio.sleep(1)
+        src = await ctx.ub.find_forward(username, since)
+        if src:
+            break
+    if not src:
+        raise PostError("Юзербот не увидел пересланный пост у себя. Попробуй ещё раз.")
+    return ctx.db.add_post(**draft, mode="forward", src_id=src, orig_chat=orig_chat, orig_msg=orig_msg)
 
 
 def kb(rows: list) -> InlineKeyboardMarkup:
@@ -91,11 +126,11 @@ async def scr_main(ctx: Ctx) -> None:
 
 
 async def scr_posts(ctx: Ctx) -> None:
-    icons = {"text": "📄", "photo": "🖼", "video": "🎬", "animation": "🎞", "document": "📎"}
-    rows = [[(f"{icons[p['kind']]} {short(p['title'])}", f"p:{p['id']}")] for p in ctx.db.posts()]
+    rows = [[(("↪️" if p["mode"] == "forward" else ICONS[p["kind"]]) + f" {short(p['title'])}", f"p:{p['id']}")]
+            for p in ctx.db.posts()]
     rows += [[("➕ Новый пост", "p:new")], [("◀️ Меню", "m")]]
-    await ctx.show("📝 <b>Посты</b>\n\nПерешли пост или создай новый. Кнопки, форматирование и премиум-эмодзи "
-                   "сохраняются.", rows)
+    await ctx.show("📝 <b>Посты</b>\n\n↪️ пересылка: юзербот пересылает оригинал с плашкой «Переслано из».\n"
+                   "📄🖼🎬 копия: созданный в боте пост, публикует бот через упоминание.", rows)
 
 
 async def scr_post(ctx: Ctx, pid: int, new: bool = False) -> None:
@@ -104,6 +139,16 @@ async def scr_post(ctx: Ctx, pid: int, new: bool = False) -> None:
         return await scr_posts(ctx)
     used = [c["title"] for c in ctx.db.campaigns() if pid in c["posts"]]
     nbtn = sum(len(r) for r in p["buttons"])
+    if p["mode"] == "forward":
+        text = (f"↪️ <b>{escape(p['title'])}</b>\nТип: пересылка. Юзербот пересылает оригинал с плашкой "
+                f"«Переслано из», кнопками и премиум-эмодзи. Редактировать пересылку нельзя: сделай копию.\n"
+                f"В рассылках: {escape(', '.join(used)) if used else 'нет'}")
+        return await ctx.show(text, [
+            [("👁 Предпросмотр", f"p:{pid}:view")],
+            [("📄 Сделать копию для правки", f"p:{pid}:copy")],
+            [("🏷 Название", f"p:{pid}:title"), ("🗑 Удалить", f"p:{pid}:del")],
+            [("◀️ Посты", "posts")],
+        ], new=new)
     text = (f"📝 <b>{escape(p['title'])}</b>\nТип: {KIND_NAMES[p['kind']]} · кнопок: {nbtn}\n"
             f"В рассылках: {escape(', '.join(used)) if used else 'нет'}\n\n"
             f"<i>{escape(short(plain(p['html']), 300)) or '(без текста)'}</i>")
@@ -269,25 +314,40 @@ async def route(ctx: Ctx, parts: list[str]) -> None:
     if head == "st":
         return await scr_status(ctx)
 
-    if head == "pd":  # черновик из пересланного без режима ввода
+    if head == "pd":  # черновик из сообщения без режима ввода
         data = await ctx.state.get_data()
-        draft = data.get("draft")
         await ctx.state.clear()
+        which = arg(1) or "copy"
+        draft = data.get(which)
         if not draft:
             return await ctx.alert("Черновик устарел, перешли пост ещё раз.")
-        pid = db.add_post(**draft)
+        if which == "fwd":
+            await ctx.show("⏳ Сохраняю пересылку…", [])
+            pid = await save_forward(ctx, draft, data["orig_chat"], data["orig_msg"])
+        else:
+            pid = db.add_post(**draft)
         return await scr_post(ctx, pid)
 
     if head == "p":
         if arg(1) == "new":
-            return await ctx.ask("newpost", "Перешли пост или отправь новый: текст, фото, видео, GIF или файл.\n"
-                                 "Форматирование, премиум-эмодзи и URL-кнопки сохранятся.", "posts")
+            return await ctx.ask("newpost", "Перешли пост: он сохранится <b>пересылкой</b> (в группы уйдёт оригинал "
+                                 "с плашкой «Переслано из»).\n\nИли отправь новый пост: текст, фото, видео, GIF или "
+                                 "файл. Он сохранится <b>копией</b>, текст и кнопки можно править.", "posts")
         pid, act = int(parts[1]), arg(2)
         p = db.post(pid)
         if not p:
             return await scr_posts(ctx)
         if act is None:
             return await scr_post(ctx, pid)
+        if p["mode"] == "forward" and act in ("text", "media", "nomedia"):
+            return await scr_post(ctx, pid)
+        if act == "view" and p["mode"] == "forward":
+            try:
+                await ctx.bot.forward_message(ctx.chat_id, p["orig_chat"], p["orig_msg"])
+            except TelegramAPIError:
+                return await ctx.alert("Оригинал в этом чате удалён, показать не могу. В группы пересылка "
+                                       "всё равно уходит: юзербот хранит свою копию.")
+            return await scr_post(ctx, pid, new=True)
         if act == "view":
             try:
                 await send_post(ctx.bot, ctx.chat_id, p)
@@ -313,6 +373,12 @@ async def route(ctx: Ctx, parts: list[str]) -> None:
         if act == "title":
             return await ctx.ask("title", "Новое название поста (видно только в админке):", f"p:{pid}", pid=pid)
         if act == "copy":
+            if p["kind"] == "text" and not p["html"]:
+                return await ctx.alert("Из этой пересылки копию не сделать: тип сообщения не поддерживается.")
+            try:
+                check_len(p["kind"], p["html"])
+            except PostError as e:
+                return await ctx.alert(str(e))
             new_id = db.add_post(p["title"][:36] + " (копия)", p["kind"], p["file_id"], p["html"], p["buttons"])
             return await scr_post(ctx, new_id)
         if act == "del":
@@ -324,6 +390,8 @@ async def route(ctx: Ctx, parts: list[str]) -> None:
 
     if head == "b":
         pid, act = int(parts[1]), arg(2)
+        if (db.post(pid) or {}).get("mode") == "forward":
+            return await scr_post(ctx, pid)
         if act == "add":
             return await ctx.ask(
                 "btnadd",
@@ -478,6 +546,8 @@ async def on_callback(cq: CallbackQuery, state: FSMContext, db: DB, sched: Sched
     ctx = Ctx(cq, state, db, sched, ub, bot)
     try:
         await route(ctx, data.split(":"))
+    except PostError as e:
+        await ctx.alert(str(e))
     except Exception:
         log.exception("Ошибка в админке: %s", data)
         await ctx.alert("Что-то пошло не так, подробности в логе.")
@@ -513,7 +583,10 @@ def need_text(message: Message) -> str:
 async def handle_input(ctx: Ctx, kind: str, data: dict, message: Message) -> None:
     db = ctx.db
     if kind == "newpost":
-        pid = db.add_post(**capture(message))
+        if is_forward(message):  # пересланное сохраняем пересылкой
+            pid = await save_forward(ctx, capture(message, strict=False), message.chat.id, message.message_id)
+        else:
+            pid = db.add_post(**capture(message))
         await ctx.state.clear()
         return await scr_post(ctx, pid)
 
@@ -597,10 +670,23 @@ async def on_free(message: Message, state: FSMContext, db: DB, sched: Scheduler,
     """Пересланный или новый пост без режима ввода: предложить сохранить."""
     if (message.text or "").startswith("/"):
         return await scr_main(Ctx(message, state, db, sched, ub, bot))
+    fwd = is_forward(message)
     try:
-        draft = capture(message)
+        copy_draft = capture(message)
     except PostError:
+        copy_draft = None
+    if not fwd and copy_draft is None:
         return await scr_main(Ctx(message, state, db, sched, ub, bot))
-    await state.set_data({"draft": draft})
-    await message.answer(f"Сохранить как пост «{escape(draft['title'])}»?",
-                         reply_markup=kb([[("💾 Сохранить", "pd")], [("✖️ Нет", "m")]]))
+    fwd_draft = capture(message, strict=False) if fwd else None
+    await state.set_data({"copy": copy_draft, "fwd": fwd_draft, "orig_chat": message.chat.id,
+                          "orig_msg": message.message_id})
+    rows = []
+    if fwd:
+        rows.append([("↪️ Сохранить пересылкой", "pd:fwd")])
+    if copy_draft:
+        rows.append([("📄 Сохранить копией" if fwd else "💾 Сохранить", "pd:copy")])
+    rows.append([("✖️ Нет", "m")])
+    title = (fwd_draft or copy_draft)["title"]
+    hint = ("\n\nПересылкой: в группы уйдёт оригинал с плашкой «Переслано из», править нельзя.\n"
+            "Копией: бот опубликует копию, можно править текст и кнопки.") if fwd else ""
+    await message.answer(f"Сохранить пост «{escape(title)}»?{hint}", reply_markup=kb(rows))

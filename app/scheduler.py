@@ -8,6 +8,7 @@
   3. После прохода по всем группам круг ждёт ответов (answer_timeout), считает итог,
      ошибки подряд копятся и при error_limit группа ставится на паузу.
 Круги разных рассылок не перемешиваются: юзербот тегает только по одной рассылке за раз.
+Посты-пересылки (mode=forward) юзербот пересылает сам, без бота: так сохраняется плашка «Переслано из».
 """
 import asyncio
 import logging
@@ -154,6 +155,7 @@ class Scheduler:
             return
 
         calls: list[tuple[Call, str]] = []
+        direct_ok = 0
         skipped: list[str] = []
         paused: list[str] = []
         async with self.lock:
@@ -166,12 +168,20 @@ class Scheduler:
                 idx = self.db.cursor(cid, chat_id)
                 post = posts[idx % len(posts)]
                 call = Call(chat_id, post, cid)
-                self.pending.setdefault(chat_id, deque()).append(call)
+                forward = post.get("mode") == "forward"
                 try:
-                    msg = await self.ub.mention(chat_id, self.bot_username)
-                    call.trigger_id = msg.id
-                    self.db.set_cursor(cid, chat_id, idx + 1)
-                    calls.append((call, title))
+                    if forward:  # настоящая пересылка от юзербота, бот не нужен
+                        await self.ub.forward(chat_id, post["src_id"], self.bot_username)
+                        self.db.set_cursor(cid, chat_id, idx + 1)
+                        self.db.log_sent(chat_id, cid, post["id"], True)
+                        self.db.update_group(chat_id, errors=0)
+                        direct_ok += 1
+                    else:  # копия через гостевой режим: упоминание, бот отвечает постом
+                        self.pending.setdefault(chat_id, deque()).append(call)
+                        msg = await self.ub.mention(chat_id, self.bot_username)
+                        call.trigger_id = msg.id
+                        self.db.set_cursor(cid, chat_id, idx + 1)
+                        calls.append((call, title))
                 except errors.FloodWaitError as e:
                     self._drop(call)
                     skipped.append(f"{escape(title)}: FloodWait {e.seconds} сек")
@@ -183,8 +193,9 @@ class Scheduler:
                     skipped.append(f"{escape(title)}: медленный режим, {e.seconds} сек")
                 except Exception as e:
                     self._drop(call)
-                    p = self._fail(chat_id, title, f"юзербот: {type(e).__name__}", call)
-                    skipped.append(f"{escape(title)}: {type(e).__name__}")
+                    name = type(e).__name__
+                    p = self._fail(chat_id, title, f"юзербот ({'пересылка' if forward else 'вызов'}): {name}", call)
+                    skipped.append(f"{escape(title)}: {name}")
                     if p:
                         paused.append(p)
                 if i < len(groups) - 1:
@@ -193,7 +204,7 @@ class Scheduler:
         # ждём ответов бота
         if calls:
             await asyncio.wait([c.fut for c, _ in calls], timeout=self.db.setting("answer_timeout"))
-        ok = 0
+        ok = direct_ok
         for call, title in calls:
             result = call.fut.result() if call.fut.done() else "бот не ответил вовремя"
             if result is True:
