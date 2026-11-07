@@ -6,6 +6,7 @@ import sys
 from aiogram import Bot, Dispatcher
 from aiogram.client.default import DefaultBotProperties
 from aiogram.fsm.storage.memory import MemoryStorage
+from telethon import events
 
 from . import admin, config, guest
 from .db import DB
@@ -35,8 +36,14 @@ async def main() -> None:
 
     if not ub_ok:
         await sched.notify("⚠️ Юзербот не авторизован. На сервере: <code>python -m app login</code>, потом перезапуск.")
-    elif not db.groups():
-        db.sync_groups(await ub.groups())
+    else:
+        @ub.client.on(events.ChatAction)
+        async def on_join(e) -> None:  # юзербот зашёл в группу - сразу обновляем список
+            if (e.user_joined or e.user_added) and e.user_id == ub.me.id:
+                try:
+                    await sched.sync_groups()
+                except Exception:
+                    log.exception("Ошибка обновления групп")
 
     asyncio.create_task(sched.loop())
     await bot.delete_webhook(drop_pending_updates=True)

@@ -125,8 +125,34 @@ class Scheduler:
             return f"⏸ {escape(title)}: на паузе после {errs} ошибок подряд ({escape(reason)})"
         return None
 
+    # ---------- группы ----------
+    async def sync_groups(self, announce: bool = True) -> None:
+        """Подтянуть группы юзербота: новые добавить, пропавшие убрать, владельцу сообщить о новых."""
+        if not self.ub.ready:
+            return
+        found = await self.ub.groups()
+        have = {g["chat_id"] for g in self.db.groups()}
+        if not found and have:  # пустой ответ при живом списке - сбой, ничего не удаляем
+            return
+        self.db.sync_groups(found)
+        new = [title for cid, title in found if cid not in have]
+        if new:
+            log.info("Новые группы: %s", ", ".join(new))
+            if announce and have:
+                await self.notify("➕ Юзербот в новых группах:\n" + "\n".join(f"• {escape(t)}" for t in new)
+                                  + "\n\nДобавь их в рассылку: 📣 Рассылки → группы.")
+
+    async def groups_loop(self) -> None:
+        while True:
+            try:
+                await self.sync_groups()
+            except Exception:
+                log.exception("Ошибка обновления групп")
+            await asyncio.sleep(120)
+
     # ---------- цикл ----------
     async def loop(self) -> None:
+        asyncio.create_task(self.groups_loop())
         while True:
             try:
                 await self.tick()
