@@ -6,6 +6,7 @@
      когда планировщик ничего не ждёт. Бот публикует следующий пост по кругу.
 Посторонние упоминания игнорируются.
 """
+import asyncio
 import logging
 
 from aiogram import Router
@@ -61,6 +62,9 @@ async def on_guest(message: Message, sched: Scheduler) -> None:
             await message.answer_guest_query(result=guest_result(post))
         sched.db.log_sent(chat_id, cid, post["id"], True)
         log.info("Ручной вызов в %s: отправлен пост %s", chat_id, post["id"])
+        # убираем «@бот»; чужое сообщение юзербот удалит, только если он админ группы
+        if sched.db.setting("delete_trigger") and sched.ub.ready:
+            asyncio.create_task(sched._delete_later(chat_id, message.message_id))
     except Exception as e:
         log.warning("Ручной вызов в %s не удался: %s", chat_id, e)
         sched.db.log_sent(chat_id, cid, post["id"], False, f"ручной вызов: {e}"[:200])
