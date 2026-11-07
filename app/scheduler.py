@@ -99,6 +99,26 @@ class Scheduler:
                 return call
         return None
 
+    # ---------- проверка медиа ----------
+    async def check_media(self) -> None:
+        """Медиа в постах-копиях привязано к боту. После смены бота старые file_id не работают:
+        находим такие посты и говорим владельцу, какие пересоздать."""
+        bad = []
+        for p in self.db.posts():
+            if p.get("mode") == "forward" or not p.get("file_id"):
+                continue
+            try:
+                await self.bot.get_file(p["file_id"])
+            except TelegramAPIError as e:
+                msg = str(getattr(e, "message", e)).lower()
+                if "too big" not in msg:  # большой файл getFile не отдаёт, но он рабочий
+                    bad.append(p)
+        if bad:
+            log.warning("Медиа не от этого бота в постах: %s", [p["id"] for p in bad])
+            await self.notify("⚠️ В этих постах фото/видео от другого бота, они не отправятся:\n"
+                              + "\n".join(f"• {escape(p['title'])}" for p in bad)
+                              + "\n\nОткрой 📝 Посты → пост → 🖼 Медиа и пришли файл заново.")
+
     # ---------- пересылки ----------
     async def make_src(self, orig_chat: int, orig_msg: int) -> int:
         """Бот пересылает оригинал поста юзерботу в личку. -> id этого сообщения у юзербота."""

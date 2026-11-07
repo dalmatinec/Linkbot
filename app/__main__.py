@@ -46,6 +46,7 @@ async def main() -> None:
                     log.exception("Ошибка обновления групп")
 
     asyncio.create_task(sched.loop())
+    asyncio.create_task(sched.check_media())
     await bot.delete_webhook(drop_pending_updates=True)
     log.info("Бот @%s запущен", me.username)
     try:
